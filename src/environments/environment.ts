@@ -18,8 +18,8 @@ export const environment = {
       // Seguindo a documentação: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech-avatar/what-is-custom-text-to-speech-avatar
       custom: {
         enabled: false, // Habilitar para usar avatar personalizado
-        avatarId: 'YOUR_CUSTOM_AVATAR_ID', // ID do avatar personalizado criado no Azure
-        style: 'default', // Estilo do avatar personalizado
+        avatarId: 'pontobb-avatar1', // ID do avatar personalizado criado no Azure
+        style: '', // Estilo do avatar personalizado
         background: {
           color: '#FFFFFFFF', // Cor de fundo (formato ARGB)
           image: null // URL da imagem de fundo (opcional)

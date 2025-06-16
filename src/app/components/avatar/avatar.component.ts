@@ -31,7 +31,7 @@ declare var SpeechSDK: any;
         <div class="avatar-header">
           <div class="avatar-title">
             <span class="avatar-emoji">🤖</span>
-            <span>Assistente Virtual</span>
+            <span>Fale com a LIA</span>
           </div>
           <button class="minimize-btn" (click)="minimizeAvatar()" aria-label="Minimizar">
             <span>✕</span>
@@ -620,61 +620,120 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  private initializeAvatarConfig() {
-    try {
-      console.log('🔧 Inicializando configuração do avatar...');
-      
-      // Verificações mais robustas
-      if (!environment.azure.speechKey || environment.azure.speechKey === 'YOUR_AZURE_SPEECH_KEY') {
-        throw new Error('❌ ERRO: Azure Speech Key não configurada! Edite src/environments/environment.ts');
-      }
-
-      if (environment.azure.speechKey.length < 32) {
-        console.warn('⚠️ AVISO: Speech Key parece muito curta. Verifique se está correta.');
-      }
-
-      console.log('🔑 Speech Key:', environment.azure.speechKey.substring(0, 8) + '...' + environment.azure.speechKey.substring(environment.azure.speechKey.length - 4));
-      
-      // Configuração do Speech Service
-      this.speechConfig = SpeechSDK.SpeechConfig.fromSubscription(
-        environment.azure.speechKey,
-        environment.azure.speechRegion
-      );
-      console.log('🔑 Speech Config criado com região:', environment.azure.speechRegion);
-
-      // Configuração da voz
-      this.speechConfig.speechSynthesisVoiceName = environment.azure.avatar.voiceName;
-      console.log('🗣️ Voz configurada:', environment.azure.avatar.voiceName);
-
-      // Configuração do avatar - testando diferentes abordagens
-      try {
-        this.avatarConfig = new SpeechSDK.AvatarConfig(
-          environment.azure.avatar.character,
-          environment.azure.avatar.style
-        );
-        console.log('🎭 Avatar configurado:', environment.azure.avatar.character, environment.azure.avatar.style);
-      } catch (avatarError) {
-        console.error('❌ Erro ao criar AvatarConfig:', avatarError);
-        // Tentar configuração mais básica
-        this.avatarConfig = new SpeechSDK.AvatarConfig('lisa', 'casual-sitting');
-        console.log('🎭 Usando configuração básica de fallback');
-      }
-
-      // Adicionar propriedades extras que podem ajudar
-      try {
-        this.speechConfig.setProperty('SpeechSynthesis_MinLogLevel', '5'); // Verbose logging
-        console.log('🔧 Configuração de debug ativada');
-      } catch (e) {
-        console.log('ℹ️ Debug logging não disponível');
-      }
-
-      console.log('✅ Configuração do avatar inicializada com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao inicializar configuração do avatar:', error);
-      this.setError(`Erro na configuração: ${error}`);
-      throw error; // Re-throw para parar a execução
+private async initializeAvatarConfig() {
+  try {
+    console.log('🔧 Inicializando configuração do avatar...');
+    
+    // Verificações mais robustas das credenciais
+    if (!environment.azure.speechKey || environment.azure.speechKey === 'YOUR_AZURE_SPEECH_KEY') {
+      throw new Error('❌ ERRO: Azure Speech Key não configurada!');
     }
+
+    if (!environment.azure.speechRegion) {
+      throw new Error('❌ ERRO: Azure Speech Region não configurada!');
+    }
+
+    // Testar credenciais primeiro
+    const isValidKey = await this.validateAzureCredentials();
+    if (!isValidKey) {
+      throw new Error('❌ ERRO: Credenciais Azure inválidas!');
+    }
+
+    console.log('🔑 Speech Key validada:', environment.azure.speechKey.substring(0, 8) + '...');
+    
+    // Configuração do Speech Service - igual ao exemplo que funciona
+    this.speechConfig = SpeechSDK.SpeechConfig.fromSubscription(
+      environment.azure.speechKey,
+      environment.azure.speechRegion
+    );
+    
+    // Configurações adicionais do exemplo
+    this.speechConfig.speechSynthesisVoiceName = environment.azure.avatar.voiceName;
+    
+    // IMPORTANTE: Adicionar videoFormat como no exemplo
+    const videoFormat = new SpeechSDK.AvatarVideoFormat();
+    
+    // Configurações de crop como no exemplo
+    let videoCropTopLeftX = 600;
+    let videoCropBottomRightX = 1320;
+    videoFormat.setCropRange(
+      new SpeechSDK.Coordinate(videoCropTopLeftX, 50), 
+      new SpeechSDK.Coordinate(videoCropBottomRightX, 1080)
+    );
+
+    // Configuração do avatar - COM videoFormat
+    this.avatarConfig = new SpeechSDK.AvatarConfig(
+      environment.azure.avatar.character,
+      environment.azure.avatar.style,
+      videoFormat  // <- ESTE PARÂMETRO ESTAVA FALTANDO!
+    );
+    
+    // Configurações adicionais como no exemplo
+    this.avatarConfig.backgroundColor = '#83ffeaff';
+    
+    // Verificar se avatar customizado está habilitado
+    if (environment.azure.avatar.custom.enabled) {
+      this.avatarConfig.customized = true;
+    }
+
+    console.log('✅ Configuração do avatar inicializada com videoFormat');
+  } catch (error) {
+    console.error('❌ Erro ao inicializar configuração do avatar:', error);
+    this.setError(`Erro na configuração: ${error}`);
+    throw error;
   }
+}
+
+private async validateAzureCredentials(): Promise<boolean> {
+  try {
+    console.log('🔍 Validando credenciais Azure...');
+    
+    // Criar configuração de teste
+    const testConfig = SpeechSDK.SpeechConfig.fromSubscription(
+      environment.azure.speechKey,
+      environment.azure.speechRegion
+    );
+    
+    // Tentar uma operação simples para validar
+    const testSynthesizer = new SpeechSDK.SpeechSynthesizer(testConfig);
+    
+    return new Promise((resolve) => {
+      // Usar um timeout para não travar
+      const timeout = setTimeout(() => {
+        console.warn('⏰ Timeout na validação de credenciais');
+        testSynthesizer.close();
+        resolve(false);
+      }, 5000);
+      
+      try {
+        // Tentar sintetizar um texto simples para testar
+        testSynthesizer.speakTextAsync(
+          "teste",
+          () => {
+            clearTimeout(timeout);
+            testSynthesizer.close();
+            console.log('✅ Credenciais Azure validadas com sucesso');
+            resolve(true);
+          },
+          (error: any) => {
+            clearTimeout(timeout);
+            testSynthesizer.close();
+            console.error('❌ Erro na validação de credenciais:', error);
+            resolve(false);
+          }
+        );
+      } catch (error) {
+        clearTimeout(timeout);
+        testSynthesizer.close();
+        console.error('❌ Erro ao criar teste de validação:', error);
+        resolve(false);
+      }
+    });
+  } catch (error) {
+    console.error('❌ Erro na validação de credenciais:', error);
+    return false;
+  }
+}
 
   async maximizeAndConnect() {
     console.log('🔄 Maximizando avatar e conectando...');
@@ -696,161 +755,275 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
     // Não desconectar - manter conexão ativa
   }
 
-  private async connectAvatar() {
-    console.log('🔌 Tentando conectar avatar...');
-    
-    if (this.isConnected || this.isLoading) {
-      console.log('ℹ️ Avatar já está conectado ou carregando');
-      return;
-    }
-
-    if (!this.viewInitialized || !this.avatarCanvas) {
-      console.warn('⚠️ Avatar canvas não está pronto, tentando novamente em 1s...');
-      setTimeout(() => {
-        this.connectAvatar();
-      }, 1000);
-      return;
-    }
-
-    this.isLoading = true;
-    this.loadingMessage = 'Conectando avatar...';
-    this.clearError();
-
-    try {
-      console.log('🎨 Configurando canvas...');
-      const canvas = this.avatarCanvas.nativeElement;
-      this.canvasContext = canvas.getContext('2d');
-      canvas.width = 380;
-      canvas.height = 240;
-
-      console.log('🌐 Criando WebRTC connection...');
-      // Usar configuração mais próxima do original
-      this.peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      });
-
-      // Eventos críticos do WebRTC
-      this.peerConnection.oniceconnectionstatechange = () => {
-        console.log('🔗 ICE state:', this.peerConnection?.iceConnectionState);
-      };
-
-      this.peerConnection.ontrack = (event) => {
-        console.log('📹 Recebendo track:', event.track.kind);
-        if (event.track.kind === 'video' && this.avatarVideo && event.streams[0]) {
-          this.avatarVideo.nativeElement.srcObject = event.streams[0];
-          this.avatarVideo.nativeElement.onloadedmetadata = () => {
-            console.log('📺 Vídeo metadata carregado');
-            this.startVideoProcessing();
-          };
-        }
-      };
-
-      console.log('🤖 Criando avatar synthesizer...');
-      // Verificar se speechConfig e avatarConfig estão válidos
-      console.log('🔍 Speech Key disponível:', !!environment.azure.speechKey && environment.azure.speechKey !== 'YOUR_AZURE_SPEECH_KEY');
-      console.log('🔍 Speech Region:', environment.azure.speechRegion);
-
-      this.avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(
-        this.speechConfig, 
-        this.avatarConfig
-      );
-
-      // Eventos básicos - mais próximos do original
-      this.avatarSynthesizer.synthesizing = (sender: any, event: any) => {
-        this.isSpeaking = true;
-      };
-      
-      this.avatarSynthesizer.synthesisCompleted = (sender: any, event: any) => {
-        this.isSpeaking = false;
-      };
-
-      this.avatarSynthesizer.synthesisStarted = (sender: any, event: any) => {
-        console.log('🗣️ Avatar synthesis started');
-        this.isSpeaking = true;
-      };
-
-      this.avatarSynthesizer.synthesisCanceled = (sender: any, event: any) => {
-        console.log('🔇 Avatar synthesis canceled:', event.reason);
-        this.isSpeaking = false;
-      };
-
-      console.log('🔗 Iniciando conexão do avatar...');
-      
-      // Versão mais direta - como no código JS que funciona
-      const connected = await this.startAvatarConnection();
-      
-      if (connected) {
-        this.isConnected = true;
-        this.isLoading = false;
-        this.sessionActive = true;
-        this.statusChange.emit('connected');
-        console.log('🎉 Avatar conectado com sucesso!');
-      } else {
-        throw new Error('Falha na conexão do avatar');
-      }
-
-    } catch (error) {
-      console.error('❌ Erro na conexão do avatar:', error);
-      this.cleanup();
-      this.setError(`Erro de conexão: ${error}`);
-      this.isLoading = false;
-    }
+private async connectAvatar() {
+  console.log('🔌 Tentando conectar avatar...');
+  
+  if (this.isConnected || this.isLoading) {
+    console.log('ℹ️ Avatar já está conectado ou carregando');
+    return;
   }
 
-  private startAvatarConnection(): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      console.log('📡 Chamando startAvatarAsync...');
-      
-      const timeoutId = setTimeout(() => {
-        console.log('⏰ Timeout de 15 segundos atingido');
-        console.log('🔍 Tentando abordagem alternativa...');
-        
-        // Se deu timeout, tentar método alternativo
-        this.tryAlternativeConnection().then(resolve).catch(() => resolve(false));
-      }, 15000);
+  if (!this.viewInitialized || !this.avatarCanvas) {
+    console.warn('⚠️ Avatar canvas não está pronto, tentando novamente em 1s...');
+    setTimeout(() => {
+      this.connectAvatar();
+    }, 1000);
+    return;
+  }
 
-      try {
-        this.avatarSynthesizer.startAvatarAsync(
-          this.peerConnection,
-          (result: any) => {
-            clearTimeout(timeoutId);
-            console.log('✅ startAvatarAsync SUCCESS');
-            console.log('📊 Connection result:', result);
-            resolve(true);
-          },
-          (error: any) => {
-            clearTimeout(timeoutId);
-            console.error('❌ startAvatarAsync ERROR:', error);
-            console.error('❌ Error type:', typeof error);
-            console.error('❌ Error message:', error?.message);
-            console.error('❌ Error code:', error?.code);
-            console.error('❌ Error details:', error?.errorDetails);
+  this.isLoading = true;
+  this.loadingMessage = 'Conectando avatar...';
+  this.clearError();
+
+  try {
+    console.log('🎨 Configurando canvas...');
+    const canvas = this.avatarCanvas.nativeElement;
+    this.canvasContext = canvas.getContext('2d');
+    canvas.width = 380;
+    canvas.height = 240;
+
+    // CORREÇÃO CRÍTICA: Obter credenciais ICE do Azure primeiro
+    console.log('🔑 Obtendo credenciais ICE do Azure...');
+    const iceCredentials = await this.getAzureIceCredentials();
+    
+    if (!iceCredentials) {
+      throw new Error('Falha ao obter credenciais ICE do Azure');
+    }
+
+    console.log('🌐 Criando WebRTC connection com servidores ICE do Azure...');
+    
+    // USAR AS CREDENCIAIS ICE DO AZURE (como no exemplo que funciona)
+    this.peerConnection = new RTCPeerConnection({
+      iceServers: [{
+        urls: [iceCredentials.iceServerUrl],
+        username: iceCredentials.iceServerUsername,
+        credential: iceCredentials.iceServerCredential
+      }]
+    });
+
+    // Eventos críticos do WebRTC
+    this.peerConnection.oniceconnectionstatechange = () => {
+      console.log('🔗 ICE state:', this.peerConnection?.iceConnectionState);
+      
+      if (this.peerConnection?.iceConnectionState === 'failed') {
+        console.error('❌ Conexão ICE falhou');
+        this.setError('Falha na conexão ICE');
+      } else if (this.peerConnection?.iceConnectionState === 'connected') {
+        console.log('✅ Conexão ICE estabelecida');
+      }
+    };
+
+    this.peerConnection.ontrack = (event) => {
+      console.log('📹 Recebendo track:', event.track.kind);
+      if (event.track.kind === 'video' && this.avatarVideo && event.streams[0]) {
+        this.avatarVideo.nativeElement.srcObject = event.streams[0];
+        this.avatarVideo.nativeElement.onloadedmetadata = () => {
+          console.log('📺 Vídeo metadata carregado');
+          this.startVideoProcessing();
+        };
+      }
+    };
+
+    // IMPORTANTE: Adicionar transceivers como no exemplo
+    console.log('📡 Adicionando transceivers...');
+    this.peerConnection.addTransceiver('video', { direction: 'sendrecv' });
+    this.peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
+
+    console.log('🤖 Criando avatar synthesizer...');
+    
+    this.avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(
+      this.speechConfig, 
+      this.avatarConfig
+    );
+
+    // Eventos do avatar
+    this.avatarSynthesizer.avatarEventReceived = (s: any, e: any) => {
+      let offsetMessage = ", offset from session start: " + e.offset / 10000 + "ms.";
+      if (e.offset === 0) {
+        offsetMessage = "";
+      }
+      console.log("Event received: " + e.description + offsetMessage);
+    };
+
+    this.avatarSynthesizer.synthesizing = (sender: any, event: any) => {
+      this.isSpeaking = true;
+    };
+    
+    this.avatarSynthesizer.synthesisCompleted = (sender: any, event: any) => {
+      this.isSpeaking = false;
+    };
+
+    this.avatarSynthesizer.synthesisStarted = (sender: any, event: any) => {
+      console.log('🗣️ Avatar synthesis started');
+      this.isSpeaking = true;
+    };
+
+    this.avatarSynthesizer.synthesisCanceled = (sender: any, event: any) => {
+      console.log('🔇 Avatar synthesis canceled:', event.reason);
+      this.isSpeaking = false;
+    };
+
+    console.log('🔗 Iniciando conexão do avatar...');
+    
+    // Usar o método CORRETO de conexão (como no exemplo)
+    const connected = await this.startAvatarConnectionWithPromise();
+    
+    if (connected) {
+      this.isConnected = true;
+      this.isLoading = false;
+      this.sessionActive = true;
+      this.statusChange.emit('connected');
+      console.log('🎉 Avatar conectado com sucesso!');
+    } else {
+      throw new Error('Falha na conexão do avatar');
+    }
+
+  } catch (error) {
+    console.error('❌ Erro na conexão do avatar:', error);
+    this.cleanup();
+    this.setError(`Erro de conexão: ${error}`);
+    this.isLoading = false;
+  }
+}
+
+// NOVO MÉTODO: Obter credenciais ICE do Azure (CRÍTICO)
+private async getAzureIceCredentials(): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    
+    // URL correta para obter token ICE do Azure
+    const tokenUrl = `https://${environment.azure.speechRegion}.tts.speech.microsoft.com/cognitiveservices/avatar/relay/token/v1`;
+    
+    console.log('🔗 Fazendo requisição para:', tokenUrl);
+    
+    xhr.open("GET", tokenUrl);
+    xhr.setRequestHeader("Ocp-Apim-Subscription-Key", environment.azure.speechKey);
+    
+    xhr.addEventListener("readystatechange", function() {
+      if (this.readyState === 4) {
+        if (this.status === 200) {
+          try {
+            const responseData = JSON.parse(this.responseText);
+            console.log('✅ Credenciais ICE obtidas com sucesso');
             
-            // Log mais detalhado do erro
-            if (error && typeof error === 'object') {
-              for (const key in error) {
-                if (error.hasOwnProperty(key)) {
-                  console.error(`❌ Error.${key}:`, error[key]);
-                }
-              }
-            }
-            
-            resolve(false);
+            resolve({
+              iceServerUrl: responseData.Urls[0],
+              iceServerUsername: responseData.Username,
+              iceServerCredential: responseData.Password
+            });
+          } catch (error) {
+            console.error('❌ Erro ao parsear resposta ICE:', error);
+            reject(error);
           }
-        );
-        
-        console.log('📞 startAvatarAsync foi chamado, aguardando resposta...');
-        
-      } catch (syncError) {
-        clearTimeout(timeoutId);
-        console.error('❌ Erro síncrono ao chamar startAvatarAsync:', syncError);
-        resolve(false);
+        } else {
+          console.error('❌ Erro HTTP ao obter credenciais ICE:', this.status, this.statusText);
+          console.error('❌ Resposta:', this.responseText);
+          reject(new Error(`HTTP ${this.status}: ${this.statusText}`));
+        }
       }
     });
-  }
+    
+    xhr.addEventListener("error", function() {
+      console.error('❌ Erro de rede ao obter credenciais ICE');
+      reject(new Error('Erro de rede'));
+    });
+    
+    xhr.addEventListener("timeout", function() {
+      console.error('❌ Timeout ao obter credenciais ICE');
+      reject(new Error('Timeout'));
+    });
+    
+    xhr.timeout = 10000; // 10 segundos de timeout
+    xhr.send();
+  });
+}
+
+// MÉTODO CORRIGIDO: startAvatarAsync usando Promise como no exemplo
+private startAvatarConnectionWithPromise(): Promise<boolean> {
+  return new Promise((resolve) => {
+    console.log('📡 Chamando startAvatarAsync com Promise...');
+    
+    // Timeout de 30 segundos (o exemplo não tinha timeout no startAvatarAsync)
+    const timeoutId = setTimeout(() => {
+      console.log('⏰ Timeout de 30 segundos atingido');
+      resolve(false);
+    }, 30000);
+
+    // USAR O MÉTODO CORRETO: startAvatarAsync retorna Promise
+    this.avatarSynthesizer.startAvatarAsync(this.peerConnection)
+      .then((result: any) => {
+        clearTimeout(timeoutId);
+        
+        // Verificar o resultado como no exemplo
+        if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+          console.log("✅ Avatar started. Result ID: " + result.resultId);
+          resolve(true);
+        } else {
+          console.log("❌ Unable to start avatar. Result ID: " + result.resultId);
+          
+          if (result.reason === SpeechSDK.ResultReason.Canceled) {
+            let cancellationDetails = SpeechSDK.CancellationDetails.fromResult(result);
+            if (cancellationDetails.reason === SpeechSDK.CancellationReason.Error) {
+              console.log("❌ Cancellation details:", cancellationDetails.errorDetails);
+            }
+            console.log("❌ Unable to start avatar: " + cancellationDetails.errorDetails);
+          }
+          
+          resolve(false);
+        }
+      })
+      .catch((error: any) => {
+        clearTimeout(timeoutId);
+        console.error('❌ startAvatarAsync PROMISE ERROR:', error);
+        resolve(false);
+      });
+      
+    console.log('📞 startAvatarAsync Promise foi chamado, aguardando resposta...');
+  });
+}
+
+// MÉTODO ALTERNATIVO: Se a Promise não funcionar, usar callbacks como no seu código atual
+private startAvatarConnectionWithCallbacks(): Promise<boolean> {
+  return new Promise((resolve) => {
+    console.log('📡 Chamando startAvatarAsync com callbacks...');
+    
+    const timeoutId = setTimeout(() => {
+      console.log('⏰ Timeout de 20 segundos atingido (callbacks)');
+      resolve(false);
+    }, 20000);
+
+    try {
+      this.avatarSynthesizer.startAvatarAsync(
+        this.peerConnection,
+        (result: any) => {
+          clearTimeout(timeoutId);
+          console.log('✅ startAvatarAsync SUCCESS (callbacks)');
+          console.log('📊 Connection result:', result);
+          
+          // Verificar se o resultado indica sucesso
+          if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+            resolve(true);
+          } else {
+            console.log('❌ Avatar não iniciou corretamente:', result.reason);
+            resolve(false);
+          }
+        },
+        (error: any) => {
+          clearTimeout(timeoutId);
+          console.error('❌ startAvatarAsync ERROR (callbacks):', error);
+          resolve(false);
+        }
+      );
+      
+      console.log('📞 startAvatarAsync callbacks foram configurados, aguardando resposta...');
+      
+    } catch (syncError) {
+      clearTimeout(timeoutId);
+      console.error('❌ Erro síncrono ao chamar startAvatarAsync (callbacks):', syncError);
+      resolve(false);
+    }
+  });
+}
 
   // Método alternativo baseado no código original que funciona
   private async tryAlternativeConnection(): Promise<boolean> {
