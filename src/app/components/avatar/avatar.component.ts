@@ -835,14 +835,81 @@ private async connectAvatar() {
 
     this.peerConnection.ontrack = (event) => {
       console.log('📹 Recebendo track:', event.track.kind);
+      console.log('📊 Track details:', {
+        kind: event.track.kind,
+        readyState: event.track.readyState,
+        muted: event.track.muted,
+        streamsLength: event.streams.length
+      });
+
       if (event.track.kind === 'video' && this.avatarVideo && event.streams[0]) {
+        console.log('🎥 Configurando stream de vídeo...');
         this.avatarVideo.nativeElement.srcObject = event.streams[0];
         this.avatarVideo.nativeElement.onloadedmetadata = () => {
           console.log('📺 Vídeo metadata carregado');
           this.startVideoProcessing();
         };
+      } 
+      
+      // ✅ CORREÇÃO PRINCIPAL: Configurar áudio corretamente
+      else if (event.track.kind === 'audio' && this.avatarAudio && event.streams[0]) {
+        console.log('🔊 Configurando stream de áudio...');
+        
+        const audioElement = this.avatarAudio.nativeElement;
+        
+        // Configurar stream de áudio
+        audioElement.srcObject = event.streams[0];
+        
+        // ✅ FORÇAR configurações de áudio
+        audioElement.autoplay = true;
+        audioElement.muted = false;
+        audioElement.volume = 1.0;
+        audioElement.controls = false; // Para debug, pode mudar para true temporariamente
+        
+        // ✅ AGUARDAR O ÁUDIO CARREGAR
+        audioElement.onloadedmetadata = () => {
+          console.log('🔊 Áudio metadata carregado');
+          console.log('🔊 Audio details:', {
+            duration: audioElement.duration,
+            volume: audioElement.volume,
+            muted: audioElement.muted,
+            readyState: audioElement.readyState,
+            paused: audioElement.paused
+          });
+          
+          // ✅ TENTAR REPRODUZIR MANUALMENTE
+          audioElement.play()
+            .then(() => {
+              console.log('✅ Áudio iniciado com sucesso!');
+            })
+            .catch(error => {
+              console.error('❌ Erro ao iniciar áudio:', error);
+              console.log('🔄 Tentando ativar áudio após interação do usuário...');
+              
+              // Aguardar interação do usuário para ativar áudio
+              this.waitForUserInteractionToEnableAudio();
+            });
+        };
+        
+        audioElement.onerror = (error) => {
+          console.error('❌ Erro no elemento de áudio:', error);
+        };
+        
+        audioElement.oncanplay = () => {
+          console.log('🔊 Áudio pode ser reproduzido');
+        };
+        
+        audioElement.onplay = () => {
+          console.log('▶️ Áudio começou a tocar');
+        };
+        
+        audioElement.onpause = () => {
+          console.log('⏸️ Áudio pausou');
+        };
       }
     };
+
+    
 
     // IMPORTANTE: Adicionar transceivers como no exemplo
     console.log('📡 Adicionando transceivers...');
@@ -903,6 +970,128 @@ private async connectAvatar() {
     this.cleanup();
     this.setError(`Erro de conexão: ${error}`);
     this.isLoading = false;
+  }
+}
+
+private waitForUserInteractionToEnableAudio(): void {
+  console.log('⚠️ Áudio bloqueado pelo navegador. Aguardando interação do usuário...');
+  
+  const enableAudio = () => {
+    if (this.avatarAudio?.nativeElement) {
+      console.log('🔄 Tentando ativar áudio após interação...');
+      
+      this.avatarAudio.nativeElement.play()
+        .then(() => {
+          console.log('✅ Áudio ativado após interação!');
+          document.removeEventListener('click', enableAudio);
+          document.removeEventListener('keydown', enableAudio);
+        })
+        .catch(error => {
+          console.error('❌ Ainda não foi possível ativar áudio:', error);
+        });
+    }
+  };
+  
+  // Aguardar qualquer clique ou tecla
+  document.addEventListener('click', enableAudio, { once: true });
+  document.addEventListener('keydown', enableAudio, { once: true });
+  
+  // Mostrar aviso para o usuário
+  this.setError('Clique em qualquer lugar para ativar o áudio');
+}
+
+// ADICIONAR método para testar áudio:
+public testAudio(): void {
+  console.log('🧪 Testando configuração de áudio...');
+  
+  if (!this.avatarAudio) {
+    console.error('❌ Elemento de áudio não encontrado');
+    return;
+  }
+  
+  const audioElement = this.avatarAudio.nativeElement;
+  
+  console.log('🔊 Estado atual do áudio:', {
+    srcObject: !!audioElement.srcObject,
+    volume: audioElement.volume,
+    muted: audioElement.muted,
+    paused: audioElement.paused,
+    readyState: audioElement.readyState,
+    autoplay: audioElement.autoplay
+  });
+  
+  if (audioElement.srcObject) {
+    const stream = audioElement.srcObject as MediaStream;
+    console.log('🎵 Stream de áudio:', {
+      active: stream.active,
+      audioTracks: stream.getAudioTracks().length,
+      tracks: stream.getAudioTracks().map(track => ({
+        kind: track.kind,
+        enabled: track.enabled,
+        muted: track.muted,
+        readyState: track.readyState
+      }))
+    });
+  }
+}
+
+// ADICIONAR método para forçar reprodução de áudio:
+public forceAudioPlayback(): void {
+  console.log('🔄 Forçando reprodução de áudio...');
+  
+  if (!this.avatarAudio?.nativeElement) {
+    console.error('❌ Elemento de áudio não disponível');
+    return;
+  }
+  
+  const audioElement = this.avatarAudio.nativeElement;
+  
+  // Resetar configurações
+  audioElement.muted = false;
+  audioElement.volume = 1.0;
+  
+  // Tentar reproduzir
+  audioElement.play()
+    .then(() => {
+      console.log('✅ Áudio forçado com sucesso!');
+    })
+    .catch(error => {
+      console.error('❌ Erro ao forçar áudio:', error);
+      
+      // Último recurso: criar novo elemento de áudio
+      this.createFallbackAudioElement();
+    });
+}
+
+// ADICIONAR método fallback para áudio:
+private createFallbackAudioElement(): void {
+  console.log('🆘 Criando elemento de áudio fallback...');
+  
+  // Criar novo elemento de áudio
+  const fallbackAudio = document.createElement('audio');
+  fallbackAudio.autoplay = true;
+  fallbackAudio.volume = 1.0;
+  fallbackAudio.muted = false;
+  
+  // Adicionar ao DOM (invisível)
+  fallbackAudio.style.display = 'none';
+  document.body.appendChild(fallbackAudio);
+  
+  // Atualizar referência
+  if (this.avatarAudio?.nativeElement.srcObject) {
+    fallbackAudio.srcObject = this.avatarAudio.nativeElement.srcObject;
+    
+    fallbackAudio.onplay = () => {
+      console.log('✅ Áudio fallback funcionando!');
+    };
+    
+    fallbackAudio.play()
+      .then(() => {
+        console.log('✅ Fallback audio iniciado!');
+      })
+      .catch(error => {
+        console.error('❌ Fallback também falhou:', error);
+      });
   }
 }
 
