@@ -1,0 +1,85 @@
+{
+  "name": "avatar-miniatura",
+  "version": "2.0.0",
+  "description": "Frontend para avatar em miniatura - LIA com chatbot integrado",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve --ssl --host 0.0.0.0 --port 4200",
+    "start:dev": "ng serve --ssl --host localhost --port 4200 --open",
+    "build": "ng build",
+    "build:prod": "ng build --configuration production",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test",
+    "lint": "ng lint",
+    "e2e": "ng e2e",
+    "serve:ssl": "ng serve --ssl --ssl-cert ./ssl/server.crt --ssl-key ./ssl/server.key",
+    "generate:ssl": "mkdir -p ssl && openssl req -x509 -newkey rsa:4096 -keyout ssl/server.key -out ssl/server.crt -days 365 -nodes -subj '/CN=localhost'",
+    "deploy:build": "npm run build:prod && npm run compress",
+    "compress": "cd dist && tar -czf avatar-miniatura.tar.gz *",
+    "analyze": "ng build --stats-json && npx webpack-bundle-analyzer dist/avatar-miniatura/stats.json"
+  },
+  "keywords": [
+    "avatar",
+    "azure",
+    "speech",
+    "chatbot",
+    "ai",
+    "angular",
+    "typescript",
+    "webrtc"
+  ],
+  "author": "LIA Team",
+  "license": "MIT",
+  "dependencies": {
+    "@angular/animations": "^17.3.12",
+    "@angular/common": "^17.3.12",
+    "@angular/compiler": "^17.3.12",
+    "@angular/core": "^17.3.12",
+    "@angular/forms": "^17.3.12",
+    "@angular/platform-browser": "^17.3.12",
+    "@angular/platform-browser-dynamic": "^17.3.12",
+    "@angular/router": "^17.3.12",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
+    "zone.js": "~0.14.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^17.3.17",
+    "@angular/cli": "^17.3.17",
+    "@angular/compiler-cli": "^17.3.12",
+    "@types/jasmine": "~5.1.0",
+    "@types/node": "^18.19.0",
+    "jasmine-core": "~5.1.0",
+    "karma": "~6.4.0",
+    "karma-chrome-headless": "~3.1.0",
+    "karma-coverage": "~2.2.0",
+    "karma-jasmine": "~5.1.0",
+    "karma-jasmine-html-reporter": "~2.1.0",
+    "typescript": "~5.4.0"
+  },
+  "engines": {
+    "node": ">=18.19.0",
+    "npm": ">=10.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/avatar-miniatura.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-org/avatar-miniatura/issues"
+  },
+  "homepage": "https://github.com/your-org/avatar-miniatura#readme",
+  "browserslist": [
+    "last 2 Chrome versions",
+    "last 2 Firefox versions",
+    "last 2 Safari versions",
+    "last 2 Edge versions",
+    "not IE 11",
+    "not dead"
+  ],
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  }
+}

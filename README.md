@@ -1,2 +1,2 @@
-# avatar-2
-Outra versão do avatar
+# avatar-miniatura
+Frontend para avatar em miniatura - LIA
