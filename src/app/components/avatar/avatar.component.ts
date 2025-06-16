@@ -1164,6 +1164,9 @@ async sendMessage() {
   const message = this.inputText.trim();
   if (!message || !this.isConnected) return;
 
+  // ✅ INTERROMPER fala atual quando usuário envia nova mensagem
+  this.interruptForNewMessage();
+
   this.addMessage('user', message);
   this.inputText = '';
 
@@ -1173,7 +1176,7 @@ async sendMessage() {
     if (typeof response === 'string') {
       // Resposta simples
       this.addMessage('assistant', response);
-      // ✅ AGUARDAR a fala terminar antes de continuar
+      // Falar resposta (interromperá qualquer fala anterior automaticamente)
       await this.speakText(response);
     } else {
       // Resposta streaming
@@ -1190,7 +1193,7 @@ async sendMessage() {
         
         if (fullResponse.trim()) {
           this.addMessage('assistant', fullResponse);
-          // ✅ AGUARDAR a fala terminar antes de continuar
+          // Falar resposta completa (interromperá qualquer fala anterior)
           await this.speakText(fullResponse);
         }
       } finally {
@@ -1201,43 +1204,17 @@ async sendMessage() {
     console.error('❌ Erro ao enviar mensagem:', error);
     const errorMsg = 'Desculpe, ocorreu um erro. Pode tentar novamente?';
     this.addMessage('assistant', errorMsg);
-    // ✅ AGUARDAR a fala de erro terminar
+    // Falar erro (interromperá qualquer fala anterior)
     await this.speakText(errorMsg);
   }
 }
 
-private setupAvatarEventHandlers(): void {
-  if (!this.avatarSynthesizer) return;
-
-  // ✅ USAR os flags corretos para controle síncrono
-  this.avatarSynthesizer.synthesizing = (sender: any, event: any) => {
-    console.log('🎤 Synthesizing audio...');
-    this.isSpeaking = true;
-  };
-  
-  this.avatarSynthesizer.synthesisCompleted = (sender: any, event: any) => {
-    console.log('✅ Synthesis completed');
-    // NÃO definir isSpeaking = false aqui, deixar para finishSpeaking()
-  };
-
-  this.avatarSynthesizer.synthesisStarted = (sender: any, event: any) => {
-    console.log('🗣️ Avatar synthesis started');
-    this.isSpeaking = true;
-  };
-
-  this.avatarSynthesizer.synthesisCanceled = (sender: any, event: any) => {
-    console.log('🔇 Avatar synthesis canceled:', event.reason);
-    this.finishSpeaking(); // Limpar estado
-  };
-}
-
 // ADICIONAR método para obter status da fala:
-public getSpeechStatus(): { isCurrentlySpeaking: boolean, queueLength: number } {
-  return {
-    isCurrentlySpeaking: this.isCurrentlySpeaking,
-    queueLength: this.speechQueue.length
-  };
-}
+  public getSpeechStatus(): { isCurrentlySpeaking: boolean } {
+    return {
+      isCurrentlySpeaking: this.isCurrentlySpeaking
+    };
+  }
 
   private addMessage(role: 'user' | 'assistant', content: string) {
     this.chatMessages.push({
@@ -1263,18 +1240,46 @@ private async speakText(text: string): Promise<void> {
       return;
     }
 
-    // Adicionar à fila se já estiver falando
+    // ✅ NOVA LÓGICA: Interromper fala atual se estiver falando
     if (this.isCurrentlySpeaking) {
-      console.log('🔄 Adicionando à fila de fala:', text.substring(0, 50) + '...');
-      this.speechQueue.push(text);
-      resolve();
-      return;
+      console.log('🔇 Interrompendo fala atual para nova mensagem');
+      this.stopCurrentSpeech();
     }
+
+    // ✅ LIMPAR FILA - não acumular mensagens
+    this.speechQueue = [];
 
     this.speakTextNow(text)
       .then(() => resolve())
       .catch(error => reject(error));
   });
+}
+
+// ADICIONAR método para parar apenas a fala atual (sem limpar fila):
+private stopCurrentSpeech(): void {
+  if (!this.isCurrentlySpeaking || !this.avatarSynthesizer) return;
+
+  console.log('🔇 Parando fala atual...');
+  
+  try {
+    // Parar synthesizer imediatamente
+    this.avatarSynthesizer.stopSpeakingAsync()
+      .then(() => {
+        console.log('✅ Fala atual interrompida');
+      })
+      .catch((error: any) => {
+        console.error('❌ Erro ao parar fala:', error);
+      })
+      .finally(() => {
+        // Garantir que o estado seja resetado
+        this.isCurrentlySpeaking = false;
+        this.isSpeaking = false;
+      });
+  } catch (error) {
+    console.error('❌ Erro ao interromper fala:', error);
+    this.isCurrentlySpeaking = false;
+    this.isSpeaking = false;
+  }
 }
 
 // ADICIONAR método para falar imediatamente:
@@ -1285,7 +1290,7 @@ private async speakTextNow(text: string): Promise<void> {
       return;
     }
 
-    console.log('🗣️ Iniciando fala:', text.substring(0, 50) + '...');
+    console.log('🗣️ Iniciando nova fala:', text.substring(0, 50) + '...');
     
     // Marcar como falando
     this.isCurrentlySpeaking = true;
@@ -1294,7 +1299,7 @@ private async speakTextNow(text: string): Promise<void> {
     // Limpar e preparar texto
     const cleanText = text.replace(/[<>]/g, '').trim();
     if (!cleanText) {
-      this.finishSpeaking();
+      this.finishCurrentSpeech();
       resolve();
       return;
     }
@@ -1305,9 +1310,9 @@ private async speakTextNow(text: string): Promise<void> {
     // Configurar timeout para evitar travamento
     const speechTimeout = setTimeout(() => {
       console.warn('⏰ Timeout na fala, finalizando...');
-      this.finishSpeaking();
+      this.finishCurrentSpeech();
       reject(new Error('Timeout na síntese de fala'));
-    }, 30000); // 30 segundos timeout
+    }, 30000);
 
     // Executar síntese
     this.avatarSynthesizer.speakSsmlAsync(
@@ -1317,18 +1322,18 @@ private async speakTextNow(text: string): Promise<void> {
         
         if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
           console.log('✅ Fala concluída com sucesso');
-          this.finishSpeaking();
+          this.finishCurrentSpeech();
           resolve();
         } else {
           console.error('❌ Falha na síntese:', result.reason);
-          this.finishSpeaking();
+          this.finishCurrentSpeech();
           reject(new Error(`Falha na síntese: ${result.reason}`));
         }
       },
       (error: any) => {
         clearTimeout(speechTimeout);
         console.error('❌ Erro na fala do avatar:', error);
-        this.finishSpeaking();
+        this.finishCurrentSpeech();
         reject(new Error(`Erro na síntese: ${error}`));
       }
     );
@@ -1336,24 +1341,14 @@ private async speakTextNow(text: string): Promise<void> {
 }
 
 // ADICIONAR método para finalizar fala e processar fila:
-private finishSpeaking(): void {
+private finishCurrentSpeech(): void {
   this.isCurrentlySpeaking = false;
   this.isSpeaking = false;
   
-  console.log('✅ Fala finalizada. Itens na fila:', this.speechQueue.length);
+  console.log('✅ Fala atual finalizada');
   
-  // Processar próximo item da fila
-  if (this.speechQueue.length > 0) {
-    const nextText = this.speechQueue.shift()!;
-    console.log('🔄 Processando próximo da fila:', nextText.substring(0, 50) + '...');
-    
-    // Pequeno delay para evitar sobreposição
-    setTimeout(() => {
-      this.speakTextNow(nextText).catch(error => {
-        console.error('❌ Erro ao processar fila de fala:', error);
-      });
-    }, 100);
-  }
+  // ✅ REMOVIDO: Não processar fila automaticamente
+  // O sistema agora só fala uma mensagem por vez, interrompendo a anterior
 }
 
 // ADICIONAR método para criar SSML otimizado:
@@ -1381,24 +1376,20 @@ private createOptimizedSSML(text: string): string {
 
 // ADICIONAR método para parar fala:
 public stopSpeaking(): void {
-  console.log('🔇 Parando fala...');
+  console.log('🔇 Comando para parar toda fala...');
   
-  // Limpar fila
+  // Limpar fila (mesmo que não use mais)
   this.speechQueue = [];
   
-  // Parar synthesizer
-  if (this.avatarSynthesizer && this.isCurrentlySpeaking) {
-    this.avatarSynthesizer.stopSpeakingAsync()
-      .then(() => {
-        console.log('✅ Fala interrompida com sucesso');
-        this.finishSpeaking();
-      })
-      .catch((error: any) => {
-        console.error('❌ Erro ao parar fala:', error);
-        this.finishSpeaking();
-      });
-  } else {
-    this.finishSpeaking();
+  // Parar fala atual
+  this.stopCurrentSpeech();
+}
+
+// ADICIONAR método específico para interrupção por nova mensagem:
+private interruptForNewMessage(): void {
+  if (this.isCurrentlySpeaking) {
+    console.log('🔄 Interrompendo fala para nova mensagem do usuário');
+    this.stopCurrentSpeech();
   }
 }
 
@@ -1421,6 +1412,9 @@ public stopSpeaking(): void {
             this.inputText = result.text;
             this.stopListening();
             
+            // ✅ INTERROMPER fala antes de processar nova mensagem por voz
+            this.interruptForNewMessage();
+            
             // Enviar automaticamente a mensagem reconhecida
             setTimeout(() => {
               this.sendMessage();
@@ -1437,6 +1431,9 @@ public stopSpeaking(): void {
         onStart: () => {
           this.isListening = true;
           console.log('🎤 Reconhecimento de voz iniciado');
+          
+          // ✅ INTERROMPER fala quando começar a escutar
+          this.interruptForNewMessage();
         },
         onStop: () => {
           this.isListening = false;
@@ -1488,7 +1485,7 @@ public stopSpeaking(): void {
   private cleanup(): void {
     console.log('🧹 Limpando recursos do avatar...');
     
-    // Limpar fala
+    // Parar fala atual
     this.stopSpeaking();
     
     // Parar reconhecimento de voz
@@ -1523,7 +1520,7 @@ public stopSpeaking(): void {
     this.isListening = false;
     this.isLoading = false;
     this.isCurrentlySpeaking = false;
-    this.speechQueue = [];
+    this.speechQueue = []; // Manter por compatibilidade, mas não é mais usado
     
     console.log('✅ Limpeza concluída');
   }
