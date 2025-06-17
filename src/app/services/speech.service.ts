@@ -122,24 +122,44 @@ export class SpeechService {
   }
 
   async stopContinuousRecognition(): Promise<void> {
+    console.log('🔄 Iniciando parada do reconhecimento contínuo...');
+    console.log('📊 Estado atual:', {
+      isRecognizing: this.isRecognizing,
+      hasRecognizer: !!this.speechRecognizer
+    });
+
     if (!this.isRecognizing || !this.speechRecognizer) {
+      console.log('ℹ️ Reconhecimento já está parado ou recognizer não existe');
+      this.isRecognizing = false;
       return;
     }
 
     return new Promise<void>((resolve) => {
+      console.log('🛑 Enviando comando de parada para speechRecognizer...');
+      
+      // ✅ TIMEOUT de segurança para evitar travamento
+      const stopTimeout = setTimeout(() => {
+        console.warn('⏰ Timeout ao parar reconhecimento, forçando parada...');
+        this.isRecognizing = false;
+        this.cleanup();
+        resolve();
+      }, 3000); // 3 segundos de timeout
+
       this.speechRecognizer.stopContinuousRecognitionAsync(
         () => {
+          clearTimeout(stopTimeout);
+          console.log('✅ Reconhecimento contínuo parado com sucesso');
           this.isRecognizing = false;
-          console.log('🔇 Reconhecimento contínuo parado');
           this.recognitionCallbacks.onStop?.();
           this.cleanup();
           resolve();
         },
         (error: any) => {
+          clearTimeout(stopTimeout);
           console.error('❌ Erro ao parar reconhecimento:', error);
           this.isRecognizing = false;
           this.cleanup();
-          resolve();
+          resolve(); // Resolver mesmo com erro para não travar
         }
       );
     });
@@ -220,11 +240,49 @@ export class SpeechService {
   }
 
   private cleanup(): void {
+    console.log('🧹 Limpando speech recognizer...');
+    
     if (this.speechRecognizer) {
-      this.speechRecognizer.close();
+      try {
+        // ✅ FORÇAR fechamento do recognizer
+        this.speechRecognizer.close();
+        console.log('✅ Speech recognizer fechado');
+      } catch (error) {
+        console.error('❌ Erro ao fechar speech recognizer:', error);
+      }
       this.speechRecognizer = null;
     }
+    
     this.recognitionCallbacks = {};
+    this.isRecognizing = false;
+    
+    console.log('✅ Cleanup do speech service concluído');
+  }
+
+  // ADICIONAR método de força bruta para resetar o speech service:
+  public forceReset(): void {
+    console.log('💥 FORÇANDO reset completo do speech service...');
+    
+    // Parar tudo imediatamente
+    this.isRecognizing = false;
+    
+    // Fechar recognizer se existir
+    if (this.speechRecognizer) {
+      try {
+        this.speechRecognizer.close();
+      } catch (error) {
+        console.error('Erro ao fechar recognizer durante reset:', error);
+      }
+      this.speechRecognizer = null;
+    }
+    
+    // Limpar callbacks
+    this.recognitionCallbacks = {};
+    
+    // Recriar configurações
+    this.initializeSpeechConfig();
+    
+    console.log('✅ Reset forçado concluído');
   }
 
   isRecognitionActive(): boolean {

@@ -1,5 +1,5 @@
 // src/app/components/avatar/avatar.component.ts
-import { Component, ElementRef, OnInit, OnDestroy, AfterViewInit, ViewChild, Output, EventEmitter } from '@angular/core';
+import { Component, ElementRef, OnInit, OnDestroy, AfterViewInit, ViewChild, Output, EventEmitter, ChangeDetectorRef} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { environment } from '../../../environments/environment';
@@ -556,10 +556,20 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
   private avatarSynthesizer: any;
   private peerConnection: RTCPeerConnection | null = null;
   private canvasContext: CanvasRenderingContext2D | null = null;
-
+  
+  // para controle de fala
   private speechQueue: string[] = []; // Fila de textos para falar
   private isCurrentlySpeaking = false; // Flag para controle síncrono
   private currentSpeechPromise: Promise<void> | null = null;
+
+  // para controle de microfone
+  private silenceTimer: any = null;
+  private silenceThreshold = 3000; // 3 segundos de silêncio para fechar microfone
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private microphone: MediaStreamAudioSourceNode | null = null;
+  private isDetectingSilence = false;
+  private lastAudioActivity = 0;
 
   // Flags de controle
   private viewInitialized = false;
@@ -567,7 +577,8 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
 
   constructor(
     private chatbotService: ChatbotService,
-    private speechService: SpeechService
+    private speechService: SpeechService,
+    private cdr: ChangeDetectorRef
   ) {}
 
   ngOnInit() {
@@ -629,131 +640,139 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-private async initializeAvatarConfig() {
-  try {
-    console.log('🔧 Inicializando configuração do avatar...');
-    
-    // Verificações das credenciais (manter igual)
-    if (!environment.azure.speechKey || environment.azure.speechKey === 'YOUR_AZURE_SPEECH_KEY') {
-      throw new Error('❌ ERRO: Azure Speech Key não configurada!');
-    }
-
-    if (!environment.azure.speechRegion) {
-      throw new Error('❌ ERRO: Azure Speech Region não configurada!');
-    }
-
-    const isValidKey = await this.validateAzureCredentials();
-    if (!isValidKey) {
-      throw new Error('❌ ERRO: Credenciais Azure inválidas!');
-    }
-
-    console.log('🔑 Speech Key validada:', environment.azure.speechKey.substring(0, 8) + '...');
-    
-    // Configuração do Speech Service
-    this.speechConfig = SpeechSDK.SpeechConfig.fromSubscription(
-      environment.azure.speechKey,
-      environment.azure.speechRegion
-    );
-    
-    this.speechConfig.speechSynthesisVoiceName = environment.azure.avatar.voiceName;
-    
-    // CONFIGURAÇÃO CORRIGIDA DO VIDEO FORMAT E CROP
-    console.log('🎥 Configurando video format e crop para enquadramento adequado...');
-    const videoFormat = new SpeechSDK.AvatarVideoFormat();
-    
-    // ✅ AJUSTE DO CROP PARA CENTRALIZAR O AVATAR COMO NA IMAGEM
-    // Valores ajustados para mostrar o avatar centralizado com fundo branco
-    let videoCropTopLeftX = 400;      // Reduzido para mostrar mais da lateral
-    let videoCropTopLeftY = 0;        // Começar do topo
-    let videoCropBottomRightX = 1520; // Expandido para mostrar mais do avatar
-    let videoCropBottomRightY = 1080; // Altura completa
-    
-    // Aplicar o crop otimizado
-    videoFormat.setCropRange(
-      new SpeechSDK.Coordinate(videoCropTopLeftX, videoCropTopLeftY), 
-      new SpeechSDK.Coordinate(videoCropBottomRightX, videoCropBottomRightY)
-    );
-
-    console.log('📐 Crop configurado:', {
-      topLeft: { x: videoCropTopLeftX, y: videoCropTopLeftY },
-      bottomRight: { x: videoCropBottomRightX, y: videoCropBottomRightY }
-    });
-
-    // Configuração do avatar COM o videoFormat corrigido
-    this.avatarConfig = new SpeechSDK.AvatarConfig(
-      environment.azure.avatar.character,
-      environment.azure.avatar.style,
-      videoFormat  // Aplicar o crop corrigido
-    );
-    
-    // ✅ CONFIGURAR FUNDO BRANCO NO SDK
-    this.avatarConfig.backgroundColor = '#FFFFFFFF'; // Branco sólido (ARGB)
-    
-    // Avatar customizado se habilitado
-    if (environment.azure.avatar.custom.enabled) {
-      this.avatarConfig.customized = true;
-      console.log('👤 Avatar customizado habilitado');
-    }
-
-    console.log('✅ Configuração do avatar inicializada com crop otimizado e fundo branco');
-    
-  } catch (error) {
-    console.error('❌ Erro ao inicializar configuração do avatar:', error);
-    this.setError(`Erro na configuração: ${error}`);
-    throw error;
+  // MÉTODO para forçar atualização da interface:
+  private forceUIUpdate(): void {
+    this.cdr.detectChanges();
+    setTimeout(() => {
+      this.cdr.markForCheck();
+    }, 0);
   }
-}
 
-private async validateAzureCredentials(): Promise<boolean> {
-  try {
-    console.log('🔍 Validando credenciais Azure...');
-    
-    // Criar configuração de teste
-    const testConfig = SpeechSDK.SpeechConfig.fromSubscription(
-      environment.azure.speechKey,
-      environment.azure.speechRegion
-    );
-    
-    // Tentar uma operação simples para validar
-    const testSynthesizer = new SpeechSDK.SpeechSynthesizer(testConfig);
-    
-    return new Promise((resolve) => {
-      // Usar um timeout para não travar
-      const timeout = setTimeout(() => {
-        console.warn('⏰ Timeout na validação de credenciais');
-        testSynthesizer.close();
-        resolve(false);
-      }, 5000);
+  private async initializeAvatarConfig() {
+    try {
+      console.log('🔧 Inicializando configuração do avatar...');
       
-      try {
-        // Tentar sintetizar um texto simples para testar
-        testSynthesizer.speakTextAsync(
-          "teste",
-          () => {
-            clearTimeout(timeout);
-            testSynthesizer.close();
-            console.log('✅ Credenciais Azure validadas com sucesso');
-            resolve(true);
-          },
-          (error: any) => {
-            clearTimeout(timeout);
-            testSynthesizer.close();
-            console.error('❌ Erro na validação de credenciais:', error);
-            resolve(false);
-          }
-        );
-      } catch (error) {
-        clearTimeout(timeout);
-        testSynthesizer.close();
-        console.error('❌ Erro ao criar teste de validação:', error);
-        resolve(false);
+      // Verificações das credenciais (manter igual)
+      if (!environment.azure.speechKey || environment.azure.speechKey === 'YOUR_AZURE_SPEECH_KEY') {
+        throw new Error('❌ ERRO: Azure Speech Key não configurada!');
       }
-    });
-  } catch (error) {
-    console.error('❌ Erro na validação de credenciais:', error);
-    return false;
+
+      if (!environment.azure.speechRegion) {
+        throw new Error('❌ ERRO: Azure Speech Region não configurada!');
+      }
+
+      const isValidKey = await this.validateAzureCredentials();
+      if (!isValidKey) {
+        throw new Error('❌ ERRO: Credenciais Azure inválidas!');
+      }
+
+      console.log('🔑 Speech Key validada:', environment.azure.speechKey.substring(0, 8) + '...');
+      
+      // Configuração do Speech Service
+      this.speechConfig = SpeechSDK.SpeechConfig.fromSubscription(
+        environment.azure.speechKey,
+        environment.azure.speechRegion
+      );
+      
+      this.speechConfig.speechSynthesisVoiceName = environment.azure.avatar.voiceName;
+      
+      // CONFIGURAÇÃO CORRIGIDA DO VIDEO FORMAT E CROP
+      console.log('🎥 Configurando video format e crop para enquadramento adequado...');
+      const videoFormat = new SpeechSDK.AvatarVideoFormat();
+      
+      // ✅ AJUSTE DO CROP PARA CENTRALIZAR O AVATAR COMO NA IMAGEM
+      // Valores ajustados para mostrar o avatar centralizado com fundo branco
+      let videoCropTopLeftX = 400;      // Reduzido para mostrar mais da lateral
+      let videoCropTopLeftY = 0;        // Começar do topo
+      let videoCropBottomRightX = 1520; // Expandido para mostrar mais do avatar
+      let videoCropBottomRightY = 1080; // Altura completa
+      
+      // Aplicar o crop otimizado
+      videoFormat.setCropRange(
+        new SpeechSDK.Coordinate(videoCropTopLeftX, videoCropTopLeftY), 
+        new SpeechSDK.Coordinate(videoCropBottomRightX, videoCropBottomRightY)
+      );
+
+      console.log('📐 Crop configurado:', {
+        topLeft: { x: videoCropTopLeftX, y: videoCropTopLeftY },
+        bottomRight: { x: videoCropBottomRightX, y: videoCropBottomRightY }
+      });
+
+      // Configuração do avatar COM o videoFormat corrigido
+      this.avatarConfig = new SpeechSDK.AvatarConfig(
+        environment.azure.avatar.character,
+        environment.azure.avatar.style,
+        videoFormat  // Aplicar o crop corrigido
+      );
+      
+      // ✅ CONFIGURAR FUNDO BRANCO NO SDK
+      this.avatarConfig.backgroundColor = '#FFFFFFFF'; // Branco sólido (ARGB)
+      
+      // Avatar customizado se habilitado
+      if (environment.azure.avatar.custom.enabled) {
+        this.avatarConfig.customized = true;
+        console.log('👤 Avatar customizado habilitado');
+      }
+
+      console.log('✅ Configuração do avatar inicializada com crop otimizado e fundo branco');
+      
+    } catch (error) {
+      console.error('❌ Erro ao inicializar configuração do avatar:', error);
+      this.setError(`Erro na configuração: ${error}`);
+      throw error;
+    }
+  } 
+
+  private async validateAzureCredentials(): Promise<boolean> {
+    try {
+      console.log('🔍 Validando credenciais Azure...');
+      
+      // Criar configuração de teste
+      const testConfig = SpeechSDK.SpeechConfig.fromSubscription(
+        environment.azure.speechKey,
+        environment.azure.speechRegion
+      );
+      
+      // Tentar uma operação simples para validar
+      const testSynthesizer = new SpeechSDK.SpeechSynthesizer(testConfig);
+      
+      return new Promise((resolve) => {
+        // Usar um timeout para não travar
+        const timeout = setTimeout(() => {
+          console.warn('⏰ Timeout na validação de credenciais');
+          testSynthesizer.close();
+          resolve(false);
+        }, 5000);
+        
+        try {
+          // Tentar sintetizar um texto simples para testar
+          testSynthesizer.speakTextAsync(
+            "teste",
+            () => {
+              clearTimeout(timeout);
+              testSynthesizer.close();
+              console.log('✅ Credenciais Azure validadas com sucesso');
+              resolve(true);
+            },
+            (error: any) => {
+              clearTimeout(timeout);
+              testSynthesizer.close();
+              console.error('❌ Erro na validação de credenciais:', error);
+              resolve(false);
+            }
+          );
+        } catch (error) {
+          clearTimeout(timeout);
+          testSynthesizer.close();
+          console.error('❌ Erro ao criar teste de validação:', error);
+          resolve(false);
+        }
+      });
+    } catch (error) {
+      console.error('❌ Erro na validação de credenciais:', error);
+      return false;
+    }
   }
-}
 
   async maximizeAndConnect() {
     console.log('🔄 Maximizando avatar e conectando...');
@@ -1349,265 +1368,287 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     processFrame();
   }
 
-async sendMessage() {
-  const message = this.inputText.trim();
-  if (!message || !this.isConnected) return;
+  async sendMessage() {
+    const message = this.inputText.trim();
+    if (!message || !this.isConnected) return;
 
-  // ✅ INTERROMPER fala atual quando usuário envia nova mensagem
-  this.interruptForNewMessage();
+    // ✅ INTERROMPER fala atual quando usuário envia nova mensagem
+    this.interruptForNewMessage();
 
-  this.addMessage('user', message);
-  this.inputText = '';
+    this.addMessage('user', message);
+    this.inputText = '';
 
-  try {
-    const response = await this.chatbotService.sendMessage(message);
-    
-    if (typeof response === 'string') {
-      // Resposta simples
-      this.addMessage('assistant', response);
-      // Falar resposta (interromperá qualquer fala anterior automaticamente)
-      await this.speakText(response);
-    } else {
-      // Resposta streaming
-      let fullResponse = '';
-      const reader = response.getReader();
+    try {
+      const response = await this.chatbotService.sendMessage(message);
       
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          fullResponse += value;
-        }
+      if (typeof response === 'string') {
+        // Resposta simples
+        this.addMessage('assistant', response);
+        // Falar resposta (interromperá qualquer fala anterior automaticamente)
+        await this.speakText(response);
+      } else {
+        // Resposta streaming
+        let fullResponse = '';
+        const reader = response.getReader();
         
-        if (fullResponse.trim()) {
-          this.addMessage('assistant', fullResponse);
-          // Falar resposta completa (interromperá qualquer fala anterior)
-          await this.speakText(fullResponse);
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            fullResponse += value;
+          }
+          
+          if (fullResponse.trim()) {
+            this.addMessage('assistant', fullResponse);
+            // Falar resposta completa (interromperá qualquer fala anterior)
+            await this.speakText(fullResponse);
+          }
+        } finally {
+          reader.releaseLock();
         }
-      } finally {
-        reader.releaseLock();
       }
+    } catch (error) {
+      console.error('❌ Erro ao enviar mensagem:', error);
+      const errorMsg = 'Desculpe, ocorreu um erro. Pode tentar novamente?';
+      this.addMessage('assistant', errorMsg);
+      // Falar erro (interromperá qualquer fala anterior)
+      await this.speakText(errorMsg);
     }
-  } catch (error) {
-    console.error('❌ Erro ao enviar mensagem:', error);
-    const errorMsg = 'Desculpe, ocorreu um erro. Pode tentar novamente?';
-    this.addMessage('assistant', errorMsg);
-    // Falar erro (interromperá qualquer fala anterior)
-    await this.speakText(errorMsg);
-  }
-}
-
-// ADICIONAR método para obter status da fala:
-  public getSpeechStatus(): { isCurrentlySpeaking: boolean } {
-    return {
-      isCurrentlySpeaking: this.isCurrentlySpeaking
-    };
   }
 
-  private addMessage(role: 'user' | 'assistant', content: string) {
-    this.chatMessages.push({
-      role,
-      content,
-      timestamp: new Date()
-    });
-
-    // Scroll automático para a última mensagem
-    setTimeout(() => {
-      if (this.chatHistory) {
-        const element = this.chatHistory.nativeElement;
-        element.scrollTop = element.scrollHeight;
-      }
-    }, 100);
-  }
-
-private async speakText(text: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (!this.avatarSynthesizer || !this.isConnected) {
-      console.warn('⚠️ Avatar não conectado ou synthesizer não disponível');
-      resolve();
-      return;
+  // ADICIONAR método para obter status da fala:
+    public getSpeechStatus(): { isCurrentlySpeaking: boolean } {
+      return {
+        isCurrentlySpeaking: this.isCurrentlySpeaking
+      };
     }
 
-    // ✅ NOVA LÓGICA: Interromper fala atual se estiver falando
-    if (this.isCurrentlySpeaking) {
-      console.log('🔇 Interrompendo fala atual para nova mensagem');
-      this.stopCurrentSpeech();
-    }
-
-    // ✅ LIMPAR FILA - não acumular mensagens
-    this.speechQueue = [];
-
-    this.speakTextNow(text)
-      .then(() => resolve())
-      .catch(error => reject(error));
-  });
-}
-
-// ADICIONAR método para parar apenas a fala atual (sem limpar fila):
-private stopCurrentSpeech(): void {
-  if (!this.isCurrentlySpeaking || !this.avatarSynthesizer) return;
-
-  console.log('🔇 Parando fala atual...');
-  
-  try {
-    // Parar synthesizer imediatamente
-    this.avatarSynthesizer.stopSpeakingAsync()
-      .then(() => {
-        console.log('✅ Fala atual interrompida');
-      })
-      .catch((error: any) => {
-        console.error('❌ Erro ao parar fala:', error);
-      })
-      .finally(() => {
-        // Garantir que o estado seja resetado
-        this.isCurrentlySpeaking = false;
-        this.isSpeaking = false;
+    private addMessage(role: 'user' | 'assistant', content: string) {
+      this.chatMessages.push({
+        role,
+        content,
+        timestamp: new Date()
       });
-  } catch (error) {
-    console.error('❌ Erro ao interromper fala:', error);
+
+      // Scroll automático para a última mensagem
+      setTimeout(() => {
+        if (this.chatHistory) {
+          const element = this.chatHistory.nativeElement;
+          element.scrollTop = element.scrollHeight;
+        }
+      }, 100);
+    }
+
+  private async speakText(text: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.avatarSynthesizer || !this.isConnected) {
+        console.warn('⚠️ Avatar não conectado ou synthesizer não disponível');
+        resolve();
+        return;
+      }
+
+      // ✅ NOVA LÓGICA: Interromper fala atual se estiver falando
+      if (this.isCurrentlySpeaking) {
+        console.log('🔇 Interrompendo fala atual para nova mensagem');
+        this.stopCurrentSpeech();
+      }
+
+      // ✅ LIMPAR FILA - não acumular mensagens
+      this.speechQueue = [];
+
+      this.speakTextNow(text)
+        .then(() => resolve())
+        .catch(error => reject(error));
+    });
+  }
+
+  // ADICIONAR método para parar apenas a fala atual (sem limpar fila):
+  private stopCurrentSpeech(): void {
+    if (!this.isCurrentlySpeaking || !this.avatarSynthesizer) return;
+
+    console.log('🔇 Parando fala atual...');
+    
+    try {
+      // Parar synthesizer imediatamente
+      this.avatarSynthesizer.stopSpeakingAsync()
+        .then(() => {
+          console.log('✅ Fala atual interrompida');
+        })
+        .catch((error: any) => {
+          console.error('❌ Erro ao parar fala:', error);
+        })
+        .finally(() => {
+          // Garantir que o estado seja resetado
+          this.isCurrentlySpeaking = false;
+          this.isSpeaking = false;
+        });
+    } catch (error) {
+      console.error('❌ Erro ao interromper fala:', error);
+      this.isCurrentlySpeaking = false;
+      this.isSpeaking = false;
+    }
+  }
+
+  // ADICIONAR método para falar imediatamente:
+  private async speakTextNow(text: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!this.avatarSynthesizer || !this.isConnected) {
+        reject(new Error('Avatar não conectado'));
+        return;
+      }
+
+      console.log('🗣️ Iniciando nova fala:', text.substring(0, 50) + '...');
+      
+      // Marcar como falando
+      this.isCurrentlySpeaking = true;
+      this.isSpeaking = true;
+
+      // Limpar e preparar texto
+      const cleanText = text.replace(/[<>]/g, '').trim();
+      if (!cleanText) {
+        this.finishCurrentSpeech();
+        resolve();
+        return;
+      }
+
+      // Criar SSML otimizado
+      const ssml = this.createOptimizedSSML(cleanText);
+
+      // Configurar timeout para evitar travamento
+      const speechTimeout = setTimeout(() => {
+        console.warn('⏰ Timeout na fala, finalizando...');
+        this.finishCurrentSpeech();
+        reject(new Error('Timeout na síntese de fala'));
+      }, 30000);
+
+      // Executar síntese
+      this.avatarSynthesizer.speakSsmlAsync(
+        ssml,
+        (result: any) => {
+          clearTimeout(speechTimeout);
+          
+          if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+            console.log('✅ Fala concluída com sucesso');
+            this.finishCurrentSpeech();
+            resolve();
+          } else {
+            console.error('❌ Falha na síntese:', result.reason);
+            this.finishCurrentSpeech();
+            reject(new Error(`Falha na síntese: ${result.reason}`));
+          }
+        },
+        (error: any) => {
+          clearTimeout(speechTimeout);
+          console.error('❌ Erro na fala do avatar:', error);
+          this.finishCurrentSpeech();
+          reject(new Error(`Erro na síntese: ${error}`));
+        }
+      );
+    });
+  }
+
+  // ADICIONAR método para finalizar fala e processar fila:
+  private finishCurrentSpeech(): void {
     this.isCurrentlySpeaking = false;
     this.isSpeaking = false;
-  }
-}
-
-// ADICIONAR método para falar imediatamente:
-private async speakTextNow(text: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (!this.avatarSynthesizer || !this.isConnected) {
-      reject(new Error('Avatar não conectado'));
-      return;
-    }
-
-    console.log('🗣️ Iniciando nova fala:', text.substring(0, 50) + '...');
     
-    // Marcar como falando
-    this.isCurrentlySpeaking = true;
-    this.isSpeaking = true;
+    console.log('✅ Fala atual finalizada');
+    
+    // ✅ REMOVIDO: Não processar fila automaticamente
+    // O sistema agora só fala uma mensagem por vez, interrompendo a anterior
+  }
 
-    // Limpar e preparar texto
-    const cleanText = text.replace(/[<>]/g, '').trim();
-    if (!cleanText) {
-      this.finishCurrentSpeech();
-      resolve();
-      return;
-    }
+  // ADICIONAR método para criar SSML otimizado:
+  private createOptimizedSSML(text: string): string {
+    const voiceName = environment.azure.avatar.voiceName;
+    
+    // Escapar caracteres especiais
+    const escapedText = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
 
-    // Criar SSML otimizado
-    const ssml = this.createOptimizedSSML(cleanText);
+    // SSML otimizado para avatar
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="pt-BR">
+      <voice name="${voiceName}">
+        <mstts:leadingsilence-exact value="0"/>
+        <prosody rate="0.9" pitch="+2%">
+          ${escapedText}
+        </prosody>
+      </voice>
+    </speak>`;
+  }
 
-    // Configurar timeout para evitar travamento
-    const speechTimeout = setTimeout(() => {
-      console.warn('⏰ Timeout na fala, finalizando...');
-      this.finishCurrentSpeech();
-      reject(new Error('Timeout na síntese de fala'));
-    }, 30000);
-
-    // Executar síntese
-    this.avatarSynthesizer.speakSsmlAsync(
-      ssml,
-      (result: any) => {
-        clearTimeout(speechTimeout);
-        
-        if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-          console.log('✅ Fala concluída com sucesso');
-          this.finishCurrentSpeech();
-          resolve();
-        } else {
-          console.error('❌ Falha na síntese:', result.reason);
-          this.finishCurrentSpeech();
-          reject(new Error(`Falha na síntese: ${result.reason}`));
-        }
-      },
-      (error: any) => {
-        clearTimeout(speechTimeout);
-        console.error('❌ Erro na fala do avatar:', error);
-        this.finishCurrentSpeech();
-        reject(new Error(`Erro na síntese: ${error}`));
-      }
-    );
-  });
-}
-
-// ADICIONAR método para finalizar fala e processar fila:
-private finishCurrentSpeech(): void {
-  this.isCurrentlySpeaking = false;
-  this.isSpeaking = false;
-  
-  console.log('✅ Fala atual finalizada');
-  
-  // ✅ REMOVIDO: Não processar fila automaticamente
-  // O sistema agora só fala uma mensagem por vez, interrompendo a anterior
-}
-
-// ADICIONAR método para criar SSML otimizado:
-private createOptimizedSSML(text: string): string {
-  const voiceName = environment.azure.avatar.voiceName;
-  
-  // Escapar caracteres especiais
-  const escapedText = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-
-  // SSML otimizado para avatar
-  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="pt-BR">
-    <voice name="${voiceName}">
-      <mstts:leadingsilence-exact value="0"/>
-      <prosody rate="0.9" pitch="+2%">
-        ${escapedText}
-      </prosody>
-    </voice>
-  </speak>`;
-}
-
-// ADICIONAR método para parar fala:
-public stopSpeaking(): void {
-  console.log('🔇 Comando para parar toda fala...');
-  
-  // Limpar fila (mesmo que não use mais)
-  this.speechQueue = [];
-  
-  // Parar fala atual
-  this.stopCurrentSpeech();
-}
-
-// ADICIONAR método específico para interrupção por nova mensagem:
-private interruptForNewMessage(): void {
-  if (this.isCurrentlySpeaking) {
-    console.log('🔄 Interrompendo fala para nova mensagem do usuário');
+  // ADICIONAR método para parar fala:
+  public stopSpeaking(): void {
+    console.log('🔇 Comando para parar toda fala...');
+    
+    // Limpar fila (mesmo que não use mais)
+    this.speechQueue = [];
+    
+    // Parar fala atual
     this.stopCurrentSpeech();
   }
-}
+
+  // ADICIONAR método específico para interrupção por nova mensagem:
+  private interruptForNewMessage(): void {
+    if (this.isCurrentlySpeaking) {
+      console.log('🔄 Interrompendo fala para nova mensagem do usuário');
+      this.stopCurrentSpeech();
+    }
+  }
 
   async toggleMicrophone() {
     if (this.isListening) {
-      await this.stopListening();
+      console.log('🔄 Usuário solicitou parada do microfone...');
+      await this.stopListeningCompletely();
     } else {
+      console.log('🔄 Usuário solicitou abertura do microfone...');
       await this.startListening();
     }
   }
 
   private async startListening() {
-    if (this.isListening) return;
+    if (this.isListening) {
+      console.warn('⚠️ Reconhecimento já está ativo, ignorando...');
+      return;
+    }
+
+    // ✅ VERIFICAÇÃO ROBUSTA do estado do speech service
+    if (this.speechService.isRecognitionActive()) {
+      console.log('🔄 Speech service ainda ativo, tentando parada normal...');
+      await this.stopListeningCompletely();
+      
+      // Se ainda estiver ativo após parada completa, usar força bruta
+      if (this.speechService.isRecognitionActive()) {
+        console.warn('⚠️ Speech service não parou, usando força bruta...');
+        await this.forceResetMicrophone();
+      }
+      
+      // Aguardar um pouco após reset
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
 
     try {
       const success = await this.speechService.startContinuousRecognition({
         onResult: (result: SpeechRecognitionResult) => {
+          this.lastAudioActivity = Date.now();
+          this.resetSilenceTimer();
+          
           if (result.isFinal && result.text.trim()) {
+            console.log('✅ Texto final reconhecido, fechando microfone...');
+            
             this.voiceText = '';
             this.inputText = result.text;
-            this.stopListening();
             
-            // ✅ INTERROMPER fala antes de processar nova mensagem por voz
-            this.interruptForNewMessage();
-            
-            // Enviar automaticamente a mensagem reconhecida
-            setTimeout(() => {
-              this.sendMessage();
-            }, 500);
+            this.stopListeningCompletely().then(() => {
+              setTimeout(() => {
+                this.sendMessage();
+              }, 100);
+            });
           } else {
             this.voiceText = result.text;
           }
@@ -1615,39 +1656,249 @@ private interruptForNewMessage(): void {
         onError: (error: string) => {
           console.error('❌ Erro no reconhecimento de voz:', error);
           this.setError('Erro no reconhecimento de voz');
-          this.stopListening();
+          this.forceResetMicrophone(); // ✅ Usar reset em caso de erro
         },
         onStart: () => {
           this.isListening = true;
           console.log('🎤 Reconhecimento de voz iniciado');
+          this.forceUIUpdate();
           
-          // ✅ INTERROMPER fala quando começar a escutar
+          this.startSilenceDetection();
           this.interruptForNewMessage();
         },
         onStop: () => {
           this.isListening = false;
           this.voiceText = '';
           console.log('🔇 Reconhecimento de voz parado');
+          this.forceUIUpdate();
+          
+          this.stopSilenceDetection();
         }
       });
 
       if (!success) {
+        this.isListening = false;
+        this.forceUIUpdate();
         this.setError('Não foi possível iniciar o reconhecimento de voz');
       }
     } catch (error) {
       console.error('❌ Erro ao iniciar reconhecimento:', error);
+      this.isListening = false;
+      this.forceUIUpdate();
       this.setError('Erro ao acessar o microfone');
     }
+  }
+
+  // ADICIONAR método para iniciar detecção de silêncio:
+  private async startSilenceDetection(): Promise<void> {
+    try {
+      console.log('🔍 Iniciando detecção de silêncio...');
+      
+      // Obter stream do microfone
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Criar contexto de áudio
+      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.analyser = this.audioContext.createAnalyser();
+      this.microphone = this.audioContext.createMediaStreamSource(stream);
+      
+      // Configurar analisador
+      this.analyser.fftSize = 256;
+      this.microphone.connect(this.analyser);
+      
+      // Iniciar monitoramento
+      this.isDetectingSilence = true;
+      this.lastAudioActivity = Date.now();
+      this.monitorAudioLevel();
+      
+      console.log('✅ Detecção de silêncio ativa');
+      
+    } catch (error) {
+      console.error('❌ Erro ao iniciar detecção de silêncio:', error);
+    }
+  }
+
+  // ADICIONAR método para monitorar nível de áudio:
+  private monitorAudioLevel(): void {
+    if (!this.isDetectingSilence || !this.analyser) return;
+    
+    const bufferLength = this.analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const checkAudioLevel = () => {
+      if (!this.isDetectingSilence || !this.analyser) return;
+      
+      this.analyser.getByteFrequencyData(dataArray);
+      
+      const average = dataArray.reduce((a, b) => a + b) / bufferLength;
+      const audioThreshold = 20;
+      
+      if (average > audioThreshold) {
+        this.lastAudioActivity = Date.now();
+        this.resetSilenceTimer();
+      } else {
+        const silenceDuration = Date.now() - this.lastAudioActivity;
+        
+        if (silenceDuration >= this.silenceThreshold) {
+          console.log('🔇 Silêncio prolongado detectado, fechando microfone...');
+          
+          // ✅ USAR parada completa para silêncio
+          this.stopListeningCompletely();
+          return;
+        }
+      }
+      
+      requestAnimationFrame(checkAudioLevel);
+    };
+    
+    checkAudioLevel();
+  }
+
+  // ADICIONAR método para parar detecção de silêncio:
+  private stopSilenceDetection(): void {
+    console.log('🛑 Parando detecção de silêncio...');
+    
+    this.isDetectingSilence = false;
+    this.clearSilenceTimer();
+    
+    // ✅ GARANTIR que o estado visual seja atualizado
+    if (this.isListening) {
+      this.isListening = false;
+      this.forceUIUpdate();
+    }
+    
+    // Limpar recursos de áudio
+    if (this.microphone) {
+      this.microphone.disconnect();
+      this.microphone = null;
+    }
+    
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
+    
+    this.analyser = null;
+  }
+
+  // ADICIONAR método para resetar timer de silêncio:
+  private resetSilenceTimer(): void {
+    this.clearSilenceTimer();
+    
+    this.silenceTimer = setTimeout(() => {
+      if (this.isListening) {
+        console.log('⏰ Timer de silêncio expirou, fechando microfone...');
+        
+        // ✅ USAR parada completa para timeout
+        this.stopListeningCompletely();
+      }
+    }, this.silenceThreshold);
+  }
+
+  // ADICIONAR método para limpar timer de silêncio:
+  private clearSilenceTimer(): void {
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+  }
+
+  private async stopListeningCompletely(): Promise<void> {
+    console.log('🛑 Parando reconhecimento COMPLETAMENTE...');
+    
+    // ✅ 1. ATUALIZAR estado visual IMEDIATAMENTE
+    this.isListening = false;
+    this.voiceText = '';
+    this.forceUIUpdate();
+    
+    // ✅ 2. PARAR detecção de silêncio PRIMEIRO
+    this.stopSilenceDetection();
+    
+    // ✅ 3. PARAR speech service com retry se necessário
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (this.speechService.isRecognitionActive() && attempts < maxAttempts) {
+      attempts++;
+      console.log(`🔄 Tentativa ${attempts} de parar speech service...`);
+      
+      try {
+        await this.speechService.stopContinuousRecognition();
+        
+        // Aguardar confirmação de parada
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        if (!this.speechService.isRecognitionActive()) {
+          console.log('✅ Speech service parado com sucesso');
+          break;
+        }
+      } catch (error) {
+        console.error(`❌ Erro na tentativa ${attempts}:`, error);
+      }
+    }
+    
+    // ✅ 4. VERIFICAÇÃO FINAL
+    if (this.speechService.isRecognitionActive()) {
+      console.error('❌ Não foi possível parar o speech service após todas as tentativas');
+    }
+    
+    console.log('✅ Parada completa finalizada');
   }
 
   private async stopListening() {
     if (!this.isListening) return;
     
+    console.log('🔇 Parando reconhecimento de voz...');
+    
+    // ✅ ATUALIZAR estado IMEDIATAMENTE
+    this.isListening = false;
+    this.voiceText = '';
+    this.forceUIUpdate();
+    
+    // Parar detecção de silêncio primeiro
+    this.stopSilenceDetection();
+    
     try {
       await this.speechService.stopContinuousRecognition();
+      console.log('✅ Reconhecimento parado com sucesso');
     } catch (error) {
       console.error('❌ Erro ao parar reconhecimento:', error);
     }
+    
+    // ✅ VERIFICAÇÃO FINAL
+    setTimeout(() => {
+      if (this.isListening) {
+        console.warn('⚠️ Estado inconsistente detectado, corrigindo...');
+        this.isListening = false;
+        this.forceUIUpdate();
+      }
+    }, 50);
+  }
+
+  public async forceResetMicrophone(): Promise<void> {
+    console.log('💥 FORÇA BRUTA: Resetando microfone completamente...');
+    
+    // 1. Parar detecção de silêncio
+    this.stopSilenceDetection();
+    
+    // 2. Atualizar estado visual
+    this.isListening = false;
+    this.voiceText = '';
+    this.forceUIUpdate();
+    
+    // 3. Force reset do speech service
+    this.speechService.forceReset();
+    
+    // 4. Aguardar um pouco
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    console.log('✅ Reset forçado do microfone concluído');
+  }
+
+  // ADICIONAR método para configurar sensibilidade:
+  public setSilenceSensitivity(seconds: number): void {
+    this.silenceThreshold = seconds * 1000;
+    console.log(`🔧 Sensibilidade de silêncio ajustada para ${seconds} segundos`);
   }
 
   getConnectionStatus(): string {
@@ -1674,15 +1925,11 @@ private interruptForNewMessage(): void {
   private cleanup(): void {
     console.log('🧹 Limpando recursos do avatar...');
     
-    // Parar fala atual
+    // ✅ PARAR TUDO completamente
+    this.stopListeningCompletely();
+    
     this.stopSpeaking();
     
-    // Parar reconhecimento de voz
-    if (typeof this.stopListening === 'function') {
-      this.stopListening();
-    }
-
-    // Fechar avatar synthesizer
     if (this.avatarSynthesizer) {
       try {
         this.avatarSynthesizer.close();
@@ -1692,7 +1939,6 @@ private interruptForNewMessage(): void {
       this.avatarSynthesizer = null;
     }
 
-    // Fechar peer connection
     if (this.peerConnection) {
       try {
         this.peerConnection.close();
@@ -1702,15 +1948,41 @@ private interruptForNewMessage(): void {
       this.peerConnection = null;
     }
 
-    // Resetar estados
+    // Resetar todos os estados
     this.isConnected = false;
     this.sessionActive = false;
     this.isSpeaking = false;
     this.isListening = false;
     this.isLoading = false;
     this.isCurrentlySpeaking = false;
-    this.speechQueue = []; // Manter por compatibilidade, mas não é mais usado
+    this.isDetectingSilence = false;
+    
+    this.forceUIUpdate();
     
     console.log('✅ Limpeza concluída');
+  }
+
+  // MÉTODO de debug específico para versão avançada:
+  public debugMicrophoneState(): void {
+    console.log('🐛 Debug Microphone State:', {
+      isListening: this.isListening,
+      voiceText: this.voiceText,
+      isDetectingSilence: this.isDetectingSilence,
+      speechServiceActive: this.speechService.isRecognitionActive(),
+      audioContext: !!this.audioContext,
+      analyser: !!this.analyser,
+      microphone: !!this.microphone,
+      lastActivity: new Date(this.lastAudioActivity).toLocaleTimeString()
+    });
+    
+    // ✅ AÇÃO CORRETIVA se estado inconsistente
+    if (this.isListening && !this.speechService.isRecognitionActive()) {
+      console.warn('⚠️ Estado inconsistente: UI mostra ouvindo mas service parado');
+      this.isListening = false;
+      this.forceUIUpdate();
+    } else if (!this.isListening && this.speechService.isRecognitionActive()) {
+      console.warn('⚠️ Estado inconsistente: UI mostra parado mas service ativo');
+      this.stopListeningCompletely();
+    }
   }
 }
