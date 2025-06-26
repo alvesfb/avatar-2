@@ -4,21 +4,21 @@ export const environment = {
   
   // Configurações do Azure Speech Service
   azure: {
-    speechKey: 'b04ef0d065ed4f8fa3ae08ad5fe32c60', // ⚠️ IMPORTANTE: Substituir pela sua chave real
+    speechKey: 'bd2b2c3cefc04f53a8a38716688b5832', // ⚠️ IMPORTANTE: Substituir pela sua chave real
     speechRegion: 'westus2', // ⚠️ IMPORTANTE: Substituir pela sua região
     
     // Configurações do Avatar
     avatar: {
       // Avatar padrão
-      character: 'lisa',
-      style: 'casual-sitting',
+      character: 'vivian',
+      style: '',
       voiceName: 'pt-BR-FranciscaNeural',
       
       // Configurações para avatar personalizado
       // Seguindo a documentação: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech-avatar/what-is-custom-text-to-speech-avatar
       custom: {
-        enabled: false, // Habilitar para usar avatar personalizado
-        avatarId: 'pontobb-avatar1', // ID do avatar personalizado criado no Azure
+        enabled: true, // Habilitar para usar avatar personalizado
+        avatarId: 'vivian', // ID do avatar personalizado criado no Azure
         style: '', // Estilo do avatar personalizado
         background: {
           color: '#FFFFFFFF', // Cor de fundo (formato ARGB)
@@ -37,11 +37,13 @@ export const environment = {
   
   // Configurações da API do Chatbot
   chatbot: {
-    apiUrl: 'https://acs-assist-avatar-bb.nia.servicos.bb.com.br/acs/llms/agent/opensearch', // ⚠️ IMPORTANTE: Substituir pela URL da sua API
+    apiUrl: 'https://generabb-acs.gbb.servicos.bb.com.br/acs/llms/agent', // ⚠️ IMPORTANTE: Substituir pela URL da sua API
     headers: {
-      'userIdentification': '',
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
+      'Content-Type': "application/json",
+      'agent_id': "ingpt",
+      'userIdentification': "F3155027",
+      'uor': "459593",
+      'client_id': "eyJpZCI6IjkxZjIxNDItNmNmMy00NTk1LTkxNTMtODhjZiIsImNvZGlnb1B1YmxpY2Fkb3IiOjAsImNvZGlnb1NvZnR3YXJlIjo1OTkxNywic2VxdWVuY2lhbEluc3RhbGFjYW8iOjV9"
     },
     timeout: 30000, // 30 segundos
     

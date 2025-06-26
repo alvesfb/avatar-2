@@ -13,7 +13,7 @@ declare var SpeechSDK: any;
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <!-- Avatar minimizado no canto inferior direito -->
+    <!-- Container principal do avatar -->
     <div class="avatar-container" [class.minimized]="isMinimized" [class.expanded]="!isMinimized">
       
       <!-- Botão do avatar minimizado -->
@@ -27,6 +27,7 @@ declare var SpeechSDK: any;
 
       <!-- Interface expandida -->
       <div class="avatar-interface" *ngIf="!isMinimized">
+        
         <!-- Cabeçalho com controles -->
         <div class="avatar-header">
           <div class="avatar-title">
@@ -71,7 +72,8 @@ declare var SpeechSDK: any;
 
         <!-- Interface de chat -->
         <div class="chat-interface">
-          <!-- Histórico de mensagens (simplificado) -->
+          
+          <!-- Histórico de mensagens -->
           <div class="chat-history" #chatHistory>
             <div *ngFor="let message of chatMessages" 
                  class="message" 
@@ -84,6 +86,7 @@ declare var SpeechSDK: any;
 
           <!-- Entrada de texto e controles -->
           <div class="input-container">
+            
             <!-- Botão do microfone -->
             <button 
               class="mic-button" 
@@ -239,18 +242,18 @@ declare var SpeechSDK: any;
     .avatar-video-container {
       position: relative;
       height: 240px;
-      background: #ffffff; /* MUDANÇA: fundo branco em vez do gradiente */
+      background: #ffffff;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
     }
 
-    /* Canvas do avatar - APENAS ajustar object-fit */
+    /* Canvas do avatar */
     .avatar-canvas { 
       width: 100%; 
       height: 100%; 
-      object-fit: contain; /* MUDANÇA: contain em vez de cover para manter proporções */
+      object-fit: contain;
     }
 
     .status-overlay {
@@ -523,6 +526,8 @@ declare var SpeechSDK: any;
   `]
 })
 export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
+  
+  // Referências aos elementos DOM
   @ViewChild('avatarVideo', { static: false }) avatarVideo!: ElementRef<HTMLVideoElement>;
   @ViewChild('avatarAudio', { static: false }) avatarAudio!: ElementRef<HTMLAudioElement>;
   @ViewChild('avatarCanvas', { static: false }) avatarCanvas!: ElementRef<HTMLCanvasElement>;
@@ -533,7 +538,7 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
   @Output() error = new EventEmitter<string>();
 
   // Estado do componente
-  isMinimized: boolean = true; // Iniciar minimizado
+  isMinimized: boolean = true;
   isConnected: boolean = false;
   isSpeaking: boolean = false;
   isLoading: boolean = false;
@@ -557,14 +562,14 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
   private peerConnection: RTCPeerConnection | null = null;
   private canvasContext: CanvasRenderingContext2D | null = null;
   
-  // para controle de fala
-  private speechQueue: string[] = []; // Fila de textos para falar
-  private isCurrentlySpeaking = false; // Flag para controle síncrono
+  // Controle de fala
+  private speechQueue: string[] = [];
+  private isCurrentlySpeaking = false;
   private currentSpeechPromise: Promise<void> | null = null;
 
-  // para controle de microfone
+  // Controle de microfone e detecção de silêncio
   private silenceTimer: any = null;
-  private silenceThreshold = 3000; // 3 segundos de silêncio para fechar microfone
+  private silenceThreshold = 3000; // 3 segundos de silêncio
   private audioContext: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private microphone: MediaStreamAudioSourceNode | null = null;
@@ -584,7 +589,7 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnInit() {
     this.loadSpeechSDK();
     
-    // Listener para evento de teste manual
+    // Listener para teste manual
     window.addEventListener('forceAvatarConnection', () => {
       console.log('🔧 Forçando conexão via evento de teste...');
       this.maximizeAndConnect();
@@ -600,6 +605,9 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
     this.cleanup();
   }
 
+  /**
+   * Carrega o SDK do Azure Speech
+   */
   private loadSpeechSDK() {
     if (typeof SpeechSDK === 'undefined') {
       console.log('⏳ Carregando Azure Speech SDK...');
@@ -607,21 +615,7 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
       script.src = 'https://aka.ms/csspeech/jsbrowserpackageraw';
       script.onload = () => {
         console.log('✅ Azure Speech SDK carregado');
-        
-        // Log da versão do SDK se disponível
-        try {
-          if (SpeechSDK && SpeechSDK.SpeechConfig) {
-            console.log('🔍 SpeechSDK disponível com SpeechConfig');
-            console.log('🔍 SpeechSDK.AvatarSynthesizer disponível:', typeof SpeechSDK.AvatarSynthesizer);
-            console.log('🔍 SpeechSDK.AvatarConfig disponível:', typeof SpeechSDK.AvatarConfig);
-          }
-        } catch (e) {
-          console.log('ℹ️ Não foi possível verificar versão do SDK');
-        }
-        
-        setTimeout(() => {
-          this.initializeAvatarConfig();
-        }, 100);
+        setTimeout(() => this.initializeAvatarConfig(), 100);
       };
       script.onerror = () => {
         this.setError('Erro ao carregar Azure Speech SDK');
@@ -629,30 +623,26 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
       document.head.appendChild(script);
     } else {
       console.log('✅ Azure Speech SDK já estava carregado');
-      
-      // Verificar disponibilidade dos componentes
-      console.log('🔍 Verificando componentes do SDK...');
-      console.log('🔍 SpeechConfig:', typeof SpeechSDK.SpeechConfig);
-      console.log('🔍 AvatarSynthesizer:', typeof SpeechSDK.AvatarSynthesizer);
-      console.log('🔍 AvatarConfig:', typeof SpeechSDK.AvatarConfig);
-      
       this.initializeAvatarConfig();
     }
   }
 
-  // MÉTODO para forçar atualização da interface:
+  /**
+   * Força atualização da interface
+   */
   private forceUIUpdate(): void {
     this.cdr.detectChanges();
-    setTimeout(() => {
-      this.cdr.markForCheck();
-    }, 0);
+    setTimeout(() => this.cdr.markForCheck(), 0);
   }
 
+  /**
+   * Inicializa a configuração do avatar
+   */
   private async initializeAvatarConfig() {
     try {
       console.log('🔧 Inicializando configuração do avatar...');
       
-      // Verificações das credenciais (manter igual)
+      // Verificações das credenciais
       if (!environment.azure.speechKey || environment.azure.speechKey === 'YOUR_AZURE_SPEECH_KEY') {
         throw new Error('❌ ERRO: Azure Speech Key não configurada!');
       }
@@ -676,37 +666,30 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
       
       this.speechConfig.speechSynthesisVoiceName = environment.azure.avatar.voiceName;
       
-      // CONFIGURAÇÃO CORRIGIDA DO VIDEO FORMAT E CROP
-      console.log('🎥 Configurando video format e crop para enquadramento adequado...');
+      // Configuração do formato de vídeo com crop otimizado
+      console.log('🎥 Configurando video format e crop...');
       const videoFormat = new SpeechSDK.AvatarVideoFormat();
       
-      // ✅ AJUSTE DO CROP PARA CENTRALIZAR O AVATAR COMO NA IMAGEM
-      // Valores ajustados para mostrar o avatar centralizado com fundo branco
-      let videoCropTopLeftX = 400;      // Reduzido para mostrar mais da lateral
-      let videoCropTopLeftY = 0;        // Começar do topo
-      let videoCropBottomRightX = 1520; // Expandido para mostrar mais do avatar
-      let videoCropBottomRightY = 1080; // Altura completa
+      // Valores para centralizar o avatar com fundo branco
+      let videoCropTopLeftX = 400;
+      let videoCropTopLeftY = 0;
+      let videoCropBottomRightX = 1520;
+      let videoCropBottomRightY = 1080;
       
-      // Aplicar o crop otimizado
       videoFormat.setCropRange(
         new SpeechSDK.Coordinate(videoCropTopLeftX, videoCropTopLeftY), 
         new SpeechSDK.Coordinate(videoCropBottomRightX, videoCropBottomRightY)
       );
 
-      console.log('📐 Crop configurado:', {
-        topLeft: { x: videoCropTopLeftX, y: videoCropTopLeftY },
-        bottomRight: { x: videoCropBottomRightX, y: videoCropBottomRightY }
-      });
-
-      // Configuração do avatar COM o videoFormat corrigido
+      // Configuração do avatar
       this.avatarConfig = new SpeechSDK.AvatarConfig(
         environment.azure.avatar.character,
         environment.azure.avatar.style,
-        videoFormat  // Aplicar o crop corrigido
+        videoFormat
       );
       
-      // ✅ CONFIGURAR FUNDO BRANCO NO SDK
-      this.avatarConfig.backgroundColor = '#FFFFFFFF'; // Branco sólido (ARGB)
+      // Configurar fundo branco
+      this.avatarConfig.backgroundColor = '#FFFFFFFF';
       
       // Avatar customizado se habilitado
       if (environment.azure.avatar.custom.enabled) {
@@ -714,7 +697,7 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
         console.log('👤 Avatar customizado habilitado');
       }
 
-      console.log('✅ Configuração do avatar inicializada com crop otimizado e fundo branco');
+      console.log('✅ Configuração do avatar inicializada');
       
     } catch (error) {
       console.error('❌ Erro ao inicializar configuração do avatar:', error);
@@ -723,21 +706,21 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   } 
 
+  /**
+   * Valida as credenciais do Azure
+   */
   private async validateAzureCredentials(): Promise<boolean> {
     try {
       console.log('🔍 Validando credenciais Azure...');
       
-      // Criar configuração de teste
       const testConfig = SpeechSDK.SpeechConfig.fromSubscription(
         environment.azure.speechKey,
         environment.azure.speechRegion
       );
       
-      // Tentar uma operação simples para validar
       const testSynthesizer = new SpeechSDK.SpeechSynthesizer(testConfig);
       
       return new Promise((resolve) => {
-        // Usar um timeout para não travar
         const timeout = setTimeout(() => {
           console.warn('⏰ Timeout na validação de credenciais');
           testSynthesizer.close();
@@ -745,7 +728,6 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
         }, 5000);
         
         try {
-          // Tentar sintetizar um texto simples para testar
           testSynthesizer.speakTextAsync(
             "teste",
             () => {
@@ -774,11 +756,13 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
+  /**
+   * Maximiza o avatar e inicia conexão automática
+   */
   async maximizeAndConnect() {
     console.log('🔄 Maximizando avatar e conectando...');
     this.isMinimized = false;
     
-    // Aguarda um pouco para a animação e então conecta automaticamente
     setTimeout(() => {
       if (!this.isConnected && !this.isLoading) {
         console.log('🚀 Iniciando conexão automática...');
@@ -786,61 +770,109 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
       } else {
         console.log('ℹ️ Avatar já está conectado ou conectando');
       }
-    }, 500); // Aumentei para 500ms para dar mais tempo para a animação
+    }, 500);
   }
 
+  /**
+   * Minimiza o avatar (mantém conexão ativa)
+   */
   minimizeAvatar() {
     this.isMinimized = true;
-    // Não desconectar - manter conexão ativa
   }
 
-private async connectAvatar() {
-  console.log('🔌 Tentando conectar avatar...');
-  
-  if (this.isConnected || this.isLoading) {
-    console.log('ℹ️ Avatar já está conectado ou carregando');
-    return;
-  }
-
-  if (!this.viewInitialized || !this.avatarCanvas) {
-    console.warn('⚠️ Avatar canvas não está pronto, tentando novamente em 1s...');
-    setTimeout(() => {
-      this.connectAvatar();
-    }, 1000);
-    return;
-  }
-
-  this.isLoading = true;
-  this.loadingMessage = 'Conectando avatar...';
-  this.clearError();
-
-  try {
-    console.log('🎨 Configurando canvas...');
-    const canvas = this.avatarCanvas.nativeElement;
-    this.canvasContext = canvas.getContext('2d');
-    canvas.width = 380;
-    canvas.height = 240;
-
-    // CORREÇÃO CRÍTICA: Obter credenciais ICE do Azure primeiro
-    console.log('🔑 Obtendo credenciais ICE do Azure...');
-    const iceCredentials = await this.getAzureIceCredentials();
+  /**
+   * Conecta o avatar ao Azure Speech Service
+   */
+  private async connectAvatar() {
+    console.log('🔌 Tentando conectar avatar...');
     
-    if (!iceCredentials) {
-      throw new Error('Falha ao obter credenciais ICE do Azure');
+    if (this.isConnected || this.isLoading) {
+      console.log('ℹ️ Avatar já está conectado ou carregando');
+      return;
     }
 
-    console.log('🌐 Criando WebRTC connection com servidores ICE do Azure...');
-    
-    // USAR AS CREDENCIAIS ICE DO AZURE (como no exemplo que funciona)
-    this.peerConnection = new RTCPeerConnection({
-      iceServers: [{
-        urls: [iceCredentials.iceServerUrl],
-        username: iceCredentials.iceServerUsername,
-        credential: iceCredentials.iceServerCredential
-      }]
-    });
+    if (!this.viewInitialized || !this.avatarCanvas) {
+      console.warn('⚠️ Avatar canvas não está pronto, tentando novamente em 1s...');
+      setTimeout(() => this.connectAvatar(), 1000);
+      return;
+    }
 
-    // Eventos críticos do WebRTC
+    this.isLoading = true;
+    this.loadingMessage = 'Conectando avatar...';
+    this.clearError();
+
+    try {
+      // Configurar canvas
+      console.log('🎨 Configurando canvas...');
+      const canvas = this.avatarCanvas.nativeElement;
+      this.canvasContext = canvas.getContext('2d');
+      canvas.width = 380;
+      canvas.height = 240;
+
+      // Obter credenciais ICE do Azure
+      console.log('🔑 Obtendo credenciais ICE do Azure...');
+      const iceCredentials = await this.getAzureIceCredentials();
+      
+      if (!iceCredentials) {
+        throw new Error('Falha ao obter credenciais ICE do Azure');
+      }
+
+      // Criar WebRTC connection com servidores ICE do Azure
+      console.log('🌐 Criando WebRTC connection...');
+      this.peerConnection = new RTCPeerConnection({
+        iceServers: [{
+          urls: [iceCredentials.iceServerUrl],
+          username: iceCredentials.iceServerUsername,
+          credential: iceCredentials.iceServerCredential
+        }]
+      });
+
+      // Configurar eventos WebRTC
+      this.setupWebRTCEvents();
+
+      // Adicionar transceivers
+      console.log('📡 Adicionando transceivers...');
+      this.peerConnection.addTransceiver('video', { direction: 'sendrecv' });
+      this.peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
+
+      // Criar avatar synthesizer
+      console.log('🤖 Criando avatar synthesizer...');
+      this.avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(
+        this.speechConfig, 
+        this.avatarConfig
+      );
+
+      // Configurar eventos do avatar
+      this.setupAvatarEvents();
+
+      // Iniciar conexão do avatar
+      console.log('🔗 Iniciando conexão do avatar...');
+      const connected = await this.startAvatarConnectionWithPromise();
+      
+      if (connected) {
+        this.isConnected = true;
+        this.isLoading = false;
+        this.sessionActive = true;
+        this.statusChange.emit('connected');
+        console.log('🎉 Avatar conectado com sucesso!');
+      } else {
+        throw new Error('Falha na conexão do avatar');
+      }
+
+    } catch (error) {
+      console.error('❌ Erro na conexão do avatar:', error);
+      this.cleanup();
+      this.setError(`Erro de conexão: ${error}`);
+      this.isLoading = false;
+    }
+  }
+
+  /**
+   * Configura eventos do WebRTC
+   */
+  private setupWebRTCEvents(): void {
+    if (!this.peerConnection) return;
+
     this.peerConnection.oniceconnectionstatechange = () => {
       console.log('🔗 ICE state:', this.peerConnection?.iceConnectionState);
       
@@ -854,12 +886,6 @@ private async connectAvatar() {
 
     this.peerConnection.ontrack = (event) => {
       console.log('📹 Recebendo track:', event.track.kind);
-      console.log('📊 Track details:', {
-        kind: event.track.kind,
-        readyState: event.track.readyState,
-        muted: event.track.muted,
-        streamsLength: event.streams.length
-      });
 
       if (event.track.kind === 'video' && this.avatarVideo && event.streams[0]) {
         console.log('🎥 Configurando stream de vídeo...');
@@ -869,80 +895,19 @@ private async connectAvatar() {
           this.startVideoProcessing();
         };
       } 
-      
-      // ✅ CORREÇÃO PRINCIPAL: Configurar áudio corretamente
       else if (event.track.kind === 'audio' && this.avatarAudio && event.streams[0]) {
         console.log('🔊 Configurando stream de áudio...');
-        
-        const audioElement = this.avatarAudio.nativeElement;
-        
-        // Configurar stream de áudio
-        audioElement.srcObject = event.streams[0];
-        
-        // ✅ FORÇAR configurações de áudio
-        audioElement.autoplay = true;
-        audioElement.muted = false;
-        audioElement.volume = 1.0;
-        audioElement.controls = false; // Para debug, pode mudar para true temporariamente
-        
-        // ✅ AGUARDAR O ÁUDIO CARREGAR
-        audioElement.onloadedmetadata = () => {
-          console.log('🔊 Áudio metadata carregado');
-          console.log('🔊 Audio details:', {
-            duration: audioElement.duration,
-            volume: audioElement.volume,
-            muted: audioElement.muted,
-            readyState: audioElement.readyState,
-            paused: audioElement.paused
-          });
-          
-          // ✅ TENTAR REPRODUZIR MANUALMENTE
-          audioElement.play()
-            .then(() => {
-              console.log('✅ Áudio iniciado com sucesso!');
-            })
-            .catch(error => {
-              console.error('❌ Erro ao iniciar áudio:', error);
-              console.log('🔄 Tentando ativar áudio após interação do usuário...');
-              
-              // Aguardar interação do usuário para ativar áudio
-              this.waitForUserInteractionToEnableAudio();
-            });
-        };
-        
-        audioElement.onerror = (error) => {
-          console.error('❌ Erro no elemento de áudio:', error);
-        };
-        
-        audioElement.oncanplay = () => {
-          console.log('🔊 Áudio pode ser reproduzido');
-        };
-        
-        audioElement.onplay = () => {
-          console.log('▶️ Áudio começou a tocar');
-        };
-        
-        audioElement.onpause = () => {
-          console.log('⏸️ Áudio pausou');
-        };
+        this.setupAudioStream(event.streams[0]);
       }
     };
+  }
 
-    
+  /**
+   * Configura eventos do avatar synthesizer
+   */
+  private setupAvatarEvents(): void {
+    if (!this.avatarSynthesizer) return;
 
-    // IMPORTANTE: Adicionar transceivers como no exemplo
-    console.log('📡 Adicionando transceivers...');
-    this.peerConnection.addTransceiver('video', { direction: 'sendrecv' });
-    this.peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
-
-    console.log('🤖 Criando avatar synthesizer...');
-    
-    this.avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(
-      this.speechConfig, 
-      this.avatarConfig
-    );
-
-    // Eventos do avatar
     this.avatarSynthesizer.avatarEventReceived = (s: any, e: any) => {
       let offsetMessage = ", offset from session start: " + e.offset / 10000 + "ms.";
       if (e.offset === 0) {
@@ -968,383 +933,164 @@ private async connectAvatar() {
       console.log('🔇 Avatar synthesis canceled:', event.reason);
       this.isSpeaking = false;
     };
-
-    console.log('🔗 Iniciando conexão do avatar...');
-    
-    // Usar o método CORRETO de conexão (como no exemplo)
-    const connected = await this.startAvatarConnectionWithPromise();
-    
-    if (connected) {
-      this.isConnected = true;
-      this.isLoading = false;
-      this.sessionActive = true;
-      this.statusChange.emit('connected');
-      console.log('🎉 Avatar conectado com sucesso!');
-    } else {
-      throw new Error('Falha na conexão do avatar');
-    }
-
-  } catch (error) {
-    console.error('❌ Erro na conexão do avatar:', error);
-    this.cleanup();
-    this.setError(`Erro de conexão: ${error}`);
-    this.isLoading = false;
   }
-}
 
-private waitForUserInteractionToEnableAudio(): void {
-  console.log('⚠️ Áudio bloqueado pelo navegador. Aguardando interação do usuário...');
-  
-  const enableAudio = () => {
-    if (this.avatarAudio?.nativeElement) {
-      console.log('🔄 Tentando ativar áudio após interação...');
+  /**
+   * Configura o stream de áudio
+   */
+  private setupAudioStream(stream: MediaStream): void {
+    const audioElement = this.avatarAudio.nativeElement;
+    
+    audioElement.srcObject = stream;
+    audioElement.autoplay = true;
+    audioElement.muted = false;
+    audioElement.volume = 1.0;
+    audioElement.controls = false;
+    
+    audioElement.onloadedmetadata = () => {
+      console.log('🔊 Áudio metadata carregado');
       
-      this.avatarAudio.nativeElement.play()
+      audioElement.play()
         .then(() => {
-          console.log('✅ Áudio ativado após interação!');
-          document.removeEventListener('click', enableAudio);
-          document.removeEventListener('keydown', enableAudio);
+          console.log('✅ Áudio iniciado com sucesso!');
         })
         .catch(error => {
-          console.error('❌ Ainda não foi possível ativar áudio:', error);
+          console.error('❌ Erro ao iniciar áudio:', error);
+          this.waitForUserInteractionToEnableAudio();
         });
-    }
-  };
-  
-  // Aguardar qualquer clique ou tecla
-  document.addEventListener('click', enableAudio, { once: true });
-  document.addEventListener('keydown', enableAudio, { once: true });
-  
-  // Mostrar aviso para o usuário
-  this.setError('Clique em qualquer lugar para ativar o áudio');
-}
-
-// ADICIONAR método para testar áudio:
-public testAudio(): void {
-  console.log('🧪 Testando configuração de áudio...');
-  
-  if (!this.avatarAudio) {
-    console.error('❌ Elemento de áudio não encontrado');
-    return;
-  }
-  
-  const audioElement = this.avatarAudio.nativeElement;
-  
-  console.log('🔊 Estado atual do áudio:', {
-    srcObject: !!audioElement.srcObject,
-    volume: audioElement.volume,
-    muted: audioElement.muted,
-    paused: audioElement.paused,
-    readyState: audioElement.readyState,
-    autoplay: audioElement.autoplay
-  });
-  
-  if (audioElement.srcObject) {
-    const stream = audioElement.srcObject as MediaStream;
-    console.log('🎵 Stream de áudio:', {
-      active: stream.active,
-      audioTracks: stream.getAudioTracks().length,
-      tracks: stream.getAudioTracks().map(track => ({
-        kind: track.kind,
-        enabled: track.enabled,
-        muted: track.muted,
-        readyState: track.readyState
-      }))
-    });
-  }
-}
-
-// ADICIONAR método para forçar reprodução de áudio:
-public forceAudioPlayback(): void {
-  console.log('🔄 Forçando reprodução de áudio...');
-  
-  if (!this.avatarAudio?.nativeElement) {
-    console.error('❌ Elemento de áudio não disponível');
-    return;
-  }
-  
-  const audioElement = this.avatarAudio.nativeElement;
-  
-  // Resetar configurações
-  audioElement.muted = false;
-  audioElement.volume = 1.0;
-  
-  // Tentar reproduzir
-  audioElement.play()
-    .then(() => {
-      console.log('✅ Áudio forçado com sucesso!');
-    })
-    .catch(error => {
-      console.error('❌ Erro ao forçar áudio:', error);
-      
-      // Último recurso: criar novo elemento de áudio
-      this.createFallbackAudioElement();
-    });
-}
-
-// ADICIONAR método fallback para áudio:
-private createFallbackAudioElement(): void {
-  console.log('🆘 Criando elemento de áudio fallback...');
-  
-  // Criar novo elemento de áudio
-  const fallbackAudio = document.createElement('audio');
-  fallbackAudio.autoplay = true;
-  fallbackAudio.volume = 1.0;
-  fallbackAudio.muted = false;
-  
-  // Adicionar ao DOM (invisível)
-  fallbackAudio.style.display = 'none';
-  document.body.appendChild(fallbackAudio);
-  
-  // Atualizar referência
-  if (this.avatarAudio?.nativeElement.srcObject) {
-    fallbackAudio.srcObject = this.avatarAudio.nativeElement.srcObject;
-    
-    fallbackAudio.onplay = () => {
-      console.log('✅ Áudio fallback funcionando!');
     };
     
-    fallbackAudio.play()
-      .then(() => {
-        console.log('✅ Fallback audio iniciado!');
-      })
-      .catch(error => {
-        console.error('❌ Fallback também falhou:', error);
-      });
+    audioElement.onerror = (error) => {
+      console.error('❌ Erro no elemento de áudio:', error);
+    };
   }
-}
 
-// NOVO MÉTODO: Obter credenciais ICE do Azure (CRÍTICO)
-private async getAzureIceCredentials(): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+  /**
+   * Aguarda interação do usuário para ativar áudio
+   */
+  private waitForUserInteractionToEnableAudio(): void {
+    console.log('⚠️ Áudio bloqueado pelo navegador. Aguardando interação do usuário...');
     
-    // URL correta para obter token ICE do Azure
-    const tokenUrl = `https://${environment.azure.speechRegion}.tts.speech.microsoft.com/cognitiveservices/avatar/relay/token/v1`;
-    
-    console.log('🔗 Fazendo requisição para:', tokenUrl);
-    
-    xhr.open("GET", tokenUrl);
-    xhr.setRequestHeader("Ocp-Apim-Subscription-Key", environment.azure.speechKey);
-    
-    xhr.addEventListener("readystatechange", function() {
-      if (this.readyState === 4) {
-        if (this.status === 200) {
-          try {
-            const responseData = JSON.parse(this.responseText);
-            console.log('✅ Credenciais ICE obtidas com sucesso');
-            
-            resolve({
-              iceServerUrl: responseData.Urls[0],
-              iceServerUsername: responseData.Username,
-              iceServerCredential: responseData.Password
-            });
-          } catch (error) {
-            console.error('❌ Erro ao parsear resposta ICE:', error);
-            reject(error);
-          }
-        } else {
-          console.error('❌ Erro HTTP ao obter credenciais ICE:', this.status, this.statusText);
-          console.error('❌ Resposta:', this.responseText);
-          reject(new Error(`HTTP ${this.status}: ${this.statusText}`));
-        }
-      }
-    });
-    
-    xhr.addEventListener("error", function() {
-      console.error('❌ Erro de rede ao obter credenciais ICE');
-      reject(new Error('Erro de rede'));
-    });
-    
-    xhr.addEventListener("timeout", function() {
-      console.error('❌ Timeout ao obter credenciais ICE');
-      reject(new Error('Timeout'));
-    });
-    
-    xhr.timeout = 10000; // 10 segundos de timeout
-    xhr.send();
-  });
-}
-
-// MÉTODO CORRIGIDO: startAvatarAsync usando Promise como no exemplo
-private startAvatarConnectionWithPromise(): Promise<boolean> {
-  return new Promise((resolve) => {
-    console.log('📡 Chamando startAvatarAsync com Promise...');
-    
-    // Timeout de 30 segundos (o exemplo não tinha timeout no startAvatarAsync)
-    const timeoutId = setTimeout(() => {
-      console.log('⏰ Timeout de 30 segundos atingido');
-      resolve(false);
-    }, 30000);
-
-    // USAR O MÉTODO CORRETO: startAvatarAsync retorna Promise
-    this.avatarSynthesizer.startAvatarAsync(this.peerConnection)
-      .then((result: any) => {
-        clearTimeout(timeoutId);
+    const enableAudio = () => {
+      if (this.avatarAudio?.nativeElement) {
+        console.log('🔄 Tentando ativar áudio após interação...');
         
-        // Verificar o resultado como no exemplo
-        if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-          console.log("✅ Avatar started. Result ID: " + result.resultId);
-          resolve(true);
-        } else {
-          console.log("❌ Unable to start avatar. Result ID: " + result.resultId);
-          
-          if (result.reason === SpeechSDK.ResultReason.Canceled) {
-            let cancellationDetails = SpeechSDK.CancellationDetails.fromResult(result);
-            if (cancellationDetails.reason === SpeechSDK.CancellationReason.Error) {
-              console.log("❌ Cancellation details:", cancellationDetails.errorDetails);
+        this.avatarAudio.nativeElement.play()
+          .then(() => {
+            console.log('✅ Áudio ativado após interação!');
+            document.removeEventListener('click', enableAudio);
+            document.removeEventListener('keydown', enableAudio);
+          })
+          .catch(error => {
+            console.error('❌ Ainda não foi possível ativar áudio:', error);
+          });
+      }
+    };
+    
+    document.addEventListener('click', enableAudio, { once: true });
+    document.addEventListener('keydown', enableAudio, { once: true });
+    
+    this.setError('Clique em qualquer lugar para ativar o áudio');
+  }
+
+  /**
+   * Obtém credenciais ICE do Azure
+   */
+  private async getAzureIceCredentials(): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      const tokenUrl = `https://${environment.azure.speechRegion}.tts.speech.microsoft.com/cognitiveservices/avatar/relay/token/v1`;
+      
+      console.log('🔗 Fazendo requisição para:', tokenUrl);
+      
+      xhr.open("GET", tokenUrl);
+      xhr.setRequestHeader("Ocp-Apim-Subscription-Key", environment.azure.speechKey);
+      
+      xhr.addEventListener("readystatechange", function() {
+        if (this.readyState === 4) {
+          if (this.status === 200) {
+            try {
+              const responseData = JSON.parse(this.responseText);
+              console.log('✅ Credenciais ICE obtidas com sucesso');
+              
+              resolve({
+                iceServerUrl: responseData.Urls[0],
+                iceServerUsername: responseData.Username,
+                iceServerCredential: responseData.Password
+              });
+            } catch (error) {
+              console.error('❌ Erro ao parsear resposta ICE:', error);
+              reject(error);
             }
-            console.log("❌ Unable to start avatar: " + cancellationDetails.errorDetails);
+          } else {
+            console.error('❌ Erro HTTP ao obter credenciais ICE:', this.status, this.statusText);
+            reject(new Error(`HTTP ${this.status}: ${this.statusText}`));
           }
-          
-          resolve(false);
         }
-      })
-      .catch((error: any) => {
-        clearTimeout(timeoutId);
-        console.error('❌ startAvatarAsync PROMISE ERROR:', error);
-        resolve(false);
       });
       
-    console.log('📞 startAvatarAsync Promise foi chamado, aguardando resposta...');
-  });
-}
+      xhr.addEventListener("error", function() {
+        console.error('❌ Erro de rede ao obter credenciais ICE');
+        reject(new Error('Erro de rede'));
+      });
+      
+      xhr.addEventListener("timeout", function() {
+        console.error('❌ Timeout ao obter credenciais ICE');
+        reject(new Error('Timeout'));
+      });
+      
+      xhr.timeout = 10000;
+      xhr.send();
+    });
+  }
 
-// MÉTODO ALTERNATIVO: Se a Promise não funcionar, usar callbacks como no seu código atual
-private startAvatarConnectionWithCallbacks(): Promise<boolean> {
-  return new Promise((resolve) => {
-    console.log('📡 Chamando startAvatarAsync com callbacks...');
-    
-    const timeoutId = setTimeout(() => {
-      console.log('⏰ Timeout de 20 segundos atingido (callbacks)');
-      resolve(false);
-    }, 20000);
+  /**
+   * Inicia conexão do avatar usando Promise
+   */
+  private startAvatarConnectionWithPromise(): Promise<boolean> {
+    return new Promise((resolve) => {
+      console.log('📡 Chamando startAvatarAsync com Promise...');
+      
+      const timeoutId = setTimeout(() => {
+        console.log('⏰ Timeout de 30 segundos atingido');
+        resolve(false);
+      }, 30000);
 
-    try {
-      this.avatarSynthesizer.startAvatarAsync(
-        this.peerConnection,
-        (result: any) => {
+      this.avatarSynthesizer.startAvatarAsync(this.peerConnection)
+        .then((result: any) => {
           clearTimeout(timeoutId);
-          console.log('✅ startAvatarAsync SUCCESS (callbacks)');
-          console.log('📊 Connection result:', result);
           
-          // Verificar se o resultado indica sucesso
           if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+            console.log("✅ Avatar started. Result ID: " + result.resultId);
             resolve(true);
           } else {
-            console.log('❌ Avatar não iniciou corretamente:', result.reason);
+            console.log("❌ Unable to start avatar. Result ID: " + result.resultId);
+            
+            if (result.reason === SpeechSDK.ResultReason.Canceled) {
+              let cancellationDetails = SpeechSDK.CancellationDetails.fromResult(result);
+              if (cancellationDetails.reason === SpeechSDK.CancellationReason.Error) {
+                console.log("❌ Cancellation details:", cancellationDetails.errorDetails);
+              }
+              console.log("❌ Unable to start avatar: " + cancellationDetails.errorDetails);
+            }
+            
             resolve(false);
           }
-        },
-        (error: any) => {
+        })
+        .catch((error: any) => {
           clearTimeout(timeoutId);
-          console.error('❌ startAvatarAsync ERROR (callbacks):', error);
+          console.error('❌ startAvatarAsync PROMISE ERROR:', error);
           resolve(false);
-        }
-      );
-      
-      console.log('📞 startAvatarAsync callbacks foram configurados, aguardando resposta...');
-      
-    } catch (syncError) {
-      clearTimeout(timeoutId);
-      console.error('❌ Erro síncrono ao chamar startAvatarAsync (callbacks):', syncError);
-      resolve(false);
-    }
-  });
-}
-
-  // Método alternativo baseado no código original que funciona
-  private async tryAlternativeConnection(): Promise<boolean> {
-    console.log('🔄 Tentando método alternativo de conexão...');
-    
-    try {
-      // Recriar objetos do zero - às vezes resolve problemas de estado
-      console.log('🔄 Recriando speech config...');
-      const newSpeechConfig = SpeechSDK.SpeechConfig.fromSubscription(
-        environment.azure.speechKey,
-        environment.azure.speechRegion
-      );
-      newSpeechConfig.speechSynthesisVoiceName = environment.azure.avatar.voiceName;
-
-      console.log('🔄 Recriando avatar config...');
-      const newAvatarConfig = new SpeechSDK.AvatarConfig(
-        environment.azure.avatar.character,
-        environment.azure.avatar.style
-      );
-
-      console.log('🔄 Recriando peer connection...');
-      if (this.peerConnection) {
-        this.peerConnection.close();
-      }
-
-      this.peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      });
-
-      this.peerConnection.ontrack = (event) => {
-        console.log('📹 Track recebido (método alternativo):', event.track.kind);
-        if (event.track.kind === 'video' && this.avatarVideo && event.streams[0]) {
-          this.avatarVideo.nativeElement.srcObject = event.streams[0];
-          this.avatarVideo.nativeElement.onloadedmetadata = () => {
-            console.log('📺 Vídeo metadata carregado (alternativo)');
-            this.startVideoProcessing();
-          };
-        }
-      };
-
-      console.log('🔄 Recriando avatar synthesizer...');
-      if (this.avatarSynthesizer) {
-        try {
-          this.avatarSynthesizer.close();
-        } catch (e) {
-          console.log('ℹ️ Erro ao fechar synthesizer anterior (ignorando)');
-        }
-      }
-
-      this.avatarSynthesizer = new SpeechSDK.AvatarSynthesizer(newSpeechConfig, newAvatarConfig);
-
-      // Configurar eventos novamente
-      this.avatarSynthesizer.synthesizing = () => this.isSpeaking = true;
-      this.avatarSynthesizer.synthesisCompleted = () => this.isSpeaking = false;
-      this.avatarSynthesizer.synthesisStarted = () => {
-        console.log('🗣️ Avatar synthesis started (alternativo)');
-        this.isSpeaking = true;
-      };
-
-      console.log('🔄 Tentando startAvatarAsync com objetos recreados...');
-      
-      return new Promise((resolve) => {
-        const altTimeoutId = setTimeout(() => {
-          console.log('⏰ Método alternativo também deu timeout');
-          resolve(false);
-        }, 10000); // 10 segundos para o método alternativo
-
-        this.avatarSynthesizer.startAvatarAsync(
-          this.peerConnection,
-          (result: any) => {
-            clearTimeout(altTimeoutId);
-            console.log('✅ Método alternativo FUNCIONOU!');
-            console.log('📊 Alternative result:', result);
-            resolve(true);
-          },
-          (error: any) => {
-            clearTimeout(altTimeoutId);
-            console.error('❌ Método alternativo também falhou:', error);
-            resolve(false);
-          }
-        );
-      });
-
-    } catch (error) {
-      console.error('❌ Erro no método alternativo:', error);
-      return false;
-    }
+        });
+        
+      console.log('📞 startAvatarAsync Promise foi chamado, aguardando resposta...');
+    });
   }
 
-  // Simplificar processamento de vídeo
+  /**
+   * Inicia processamento de vídeo no canvas
+   */
   private startVideoProcessing() {
     if (!this.canvasContext || !this.avatarVideo) return;
 
@@ -1368,11 +1114,14 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     processFrame();
   }
 
+  /**
+   * Envia mensagem para o chatbot
+   */
   async sendMessage() {
     const message = this.inputText.trim();
     if (!message || !this.isConnected) return;
 
-    // ✅ INTERROMPER fala atual quando usuário envia nova mensagem
+    // Interromper fala atual quando usuário envia nova mensagem
     this.interruptForNewMessage();
 
     this.addMessage('user', message);
@@ -1382,9 +1131,7 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
       const response = await this.chatbotService.sendMessage(message);
       
       if (typeof response === 'string') {
-        // Resposta simples
         this.addMessage('assistant', response);
-        // Falar resposta (interromperá qualquer fala anterior automaticamente)
         await this.speakText(response);
       } else {
         // Resposta streaming
@@ -1401,7 +1148,6 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
           
           if (fullResponse.trim()) {
             this.addMessage('assistant', fullResponse);
-            // Falar resposta completa (interromperá qualquer fala anterior)
             await this.speakText(fullResponse);
           }
         } finally {
@@ -1412,34 +1158,32 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
       console.error('❌ Erro ao enviar mensagem:', error);
       const errorMsg = 'Desculpe, ocorreu um erro. Pode tentar novamente?';
       this.addMessage('assistant', errorMsg);
-      // Falar erro (interromperá qualquer fala anterior)
       await this.speakText(errorMsg);
     }
   }
 
-  // ADICIONAR método para obter status da fala:
-    public getSpeechStatus(): { isCurrentlySpeaking: boolean } {
-      return {
-        isCurrentlySpeaking: this.isCurrentlySpeaking
-      };
-    }
+  /**
+   * Adiciona mensagem ao histórico do chat
+   */
+  private addMessage(role: 'user' | 'assistant', content: string) {
+    this.chatMessages.push({
+      role,
+      content,
+      timestamp: new Date()
+    });
 
-    private addMessage(role: 'user' | 'assistant', content: string) {
-      this.chatMessages.push({
-        role,
-        content,
-        timestamp: new Date()
-      });
+    // Scroll automático para a última mensagem
+    setTimeout(() => {
+      if (this.chatHistory) {
+        const element = this.chatHistory.nativeElement;
+        element.scrollTop = element.scrollHeight;
+      }
+    }, 100);
+  }
 
-      // Scroll automático para a última mensagem
-      setTimeout(() => {
-        if (this.chatHistory) {
-          const element = this.chatHistory.nativeElement;
-          element.scrollTop = element.scrollHeight;
-        }
-      }, 100);
-    }
-
+  /**
+   * Faz o avatar falar o texto fornecido
+   */
   private async speakText(text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.avatarSynthesizer || !this.isConnected) {
@@ -1448,13 +1192,13 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
         return;
       }
 
-      // ✅ NOVA LÓGICA: Interromper fala atual se estiver falando
+      // Interromper fala atual se estiver falando
       if (this.isCurrentlySpeaking) {
         console.log('🔇 Interrompendo fala atual para nova mensagem');
         this.stopCurrentSpeech();
       }
 
-      // ✅ LIMPAR FILA - não acumular mensagens
+      // Limpar fila - não acumular mensagens
       this.speechQueue = [];
 
       this.speakTextNow(text)
@@ -1463,14 +1207,15 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     });
   }
 
-  // ADICIONAR método para parar apenas a fala atual (sem limpar fila):
+  /**
+   * Para a fala atual do avatar
+   */
   private stopCurrentSpeech(): void {
     if (!this.isCurrentlySpeaking || !this.avatarSynthesizer) return;
 
     console.log('🔇 Parando fala atual...');
     
     try {
-      // Parar synthesizer imediatamente
       this.avatarSynthesizer.stopSpeakingAsync()
         .then(() => {
           console.log('✅ Fala atual interrompida');
@@ -1479,7 +1224,6 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
           console.error('❌ Erro ao parar fala:', error);
         })
         .finally(() => {
-          // Garantir que o estado seja resetado
           this.isCurrentlySpeaking = false;
           this.isSpeaking = false;
         });
@@ -1490,7 +1234,9 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     }
   }
 
-  // ADICIONAR método para falar imediatamente:
+  /**
+   * Fala o texto imediatamente
+   */
   private async speakTextNow(text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.avatarSynthesizer || !this.isConnected) {
@@ -1500,11 +1246,9 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
 
       console.log('🗣️ Iniciando nova fala:', text.substring(0, 50) + '...');
       
-      // Marcar como falando
       this.isCurrentlySpeaking = true;
       this.isSpeaking = true;
 
-      // Limpar e preparar texto
       const cleanText = text.replace(/[<>]/g, '').trim();
       if (!cleanText) {
         this.finishCurrentSpeech();
@@ -1512,17 +1256,14 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
         return;
       }
 
-      // Criar SSML otimizado
       const ssml = this.createOptimizedSSML(cleanText);
 
-      // Configurar timeout para evitar travamento
       const speechTimeout = setTimeout(() => {
         console.warn('⏰ Timeout na fala, finalizando...');
         this.finishCurrentSpeech();
         reject(new Error('Timeout na síntese de fala'));
       }, 30000);
 
-      // Executar síntese
       this.avatarSynthesizer.speakSsmlAsync(
         ssml,
         (result: any) => {
@@ -1548,18 +1289,18 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     });
   }
 
-  // ADICIONAR método para finalizar fala e processar fila:
+  /**
+   * Finaliza a fala atual
+   */
   private finishCurrentSpeech(): void {
     this.isCurrentlySpeaking = false;
     this.isSpeaking = false;
-    
     console.log('✅ Fala atual finalizada');
-    
-    // ✅ REMOVIDO: Não processar fila automaticamente
-    // O sistema agora só fala uma mensagem por vez, interrompendo a anterior
   }
 
-  // ADICIONAR método para criar SSML otimizado:
+  /**
+   * Cria SSML otimizado para o avatar
+   */
   private createOptimizedSSML(text: string): string {
     const voiceName = environment.azure.avatar.voiceName;
     
@@ -1571,7 +1312,6 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
 
-    // SSML otimizado para avatar
     return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="pt-BR">
       <voice name="${voiceName}">
         <mstts:leadingsilence-exact value="0"/>
@@ -1582,18 +1322,18 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     </speak>`;
   }
 
-  // ADICIONAR método para parar fala:
+  /**
+   * Para toda a fala do avatar
+   */
   public stopSpeaking(): void {
     console.log('🔇 Comando para parar toda fala...');
-    
-    // Limpar fila (mesmo que não use mais)
     this.speechQueue = [];
-    
-    // Parar fala atual
     this.stopCurrentSpeech();
   }
 
-  // ADICIONAR método específico para interrupção por nova mensagem:
+  /**
+   * Interrompe fala para nova mensagem do usuário
+   */
   private interruptForNewMessage(): void {
     if (this.isCurrentlySpeaking) {
       console.log('🔄 Interrompendo fala para nova mensagem do usuário');
@@ -1601,6 +1341,9 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     }
   }
 
+  /**
+   * Alterna estado do microfone
+   */
   async toggleMicrophone() {
     if (this.isListening) {
       console.log('🔄 Usuário solicitou parada do microfone...');
@@ -1611,24 +1354,25 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     }
   }
 
+  /**
+   * Inicia reconhecimento de voz
+   */
   private async startListening() {
     if (this.isListening) {
       console.warn('⚠️ Reconhecimento já está ativo, ignorando...');
       return;
     }
 
-    // ✅ VERIFICAÇÃO ROBUSTA do estado do speech service
+    // Verificação robusta do estado do speech service
     if (this.speechService.isRecognitionActive()) {
       console.log('🔄 Speech service ainda ativo, tentando parada normal...');
       await this.stopListeningCompletely();
       
-      // Se ainda estiver ativo após parada completa, usar força bruta
       if (this.speechService.isRecognitionActive()) {
         console.warn('⚠️ Speech service não parou, usando força bruta...');
         await this.forceResetMicrophone();
       }
       
-      // Aguardar um pouco após reset
       await new Promise(resolve => setTimeout(resolve, 200));
     }
 
@@ -1656,7 +1400,7 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
         onError: (error: string) => {
           console.error('❌ Erro no reconhecimento de voz:', error);
           this.setError('Erro no reconhecimento de voz');
-          this.forceResetMicrophone(); // ✅ Usar reset em caso de erro
+          this.forceResetMicrophone();
         },
         onStart: () => {
           this.isListening = true;
@@ -1689,24 +1433,22 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     }
   }
 
-  // ADICIONAR método para iniciar detecção de silêncio:
+  /**
+   * Inicia detecção de silêncio
+   */
   private async startSilenceDetection(): Promise<void> {
     try {
       console.log('🔍 Iniciando detecção de silêncio...');
       
-      // Obter stream do microfone
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // Criar contexto de áudio
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       this.analyser = this.audioContext.createAnalyser();
       this.microphone = this.audioContext.createMediaStreamSource(stream);
       
-      // Configurar analisador
       this.analyser.fftSize = 256;
       this.microphone.connect(this.analyser);
       
-      // Iniciar monitoramento
       this.isDetectingSilence = true;
       this.lastAudioActivity = Date.now();
       this.monitorAudioLevel();
@@ -1718,7 +1460,9 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     }
   }
 
-  // ADICIONAR método para monitorar nível de áudio:
+  /**
+   * Monitora nível de áudio para detectar silêncio
+   */
   private monitorAudioLevel(): void {
     if (!this.isDetectingSilence || !this.analyser) return;
     
@@ -1741,8 +1485,6 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
         
         if (silenceDuration >= this.silenceThreshold) {
           console.log('🔇 Silêncio prolongado detectado, fechando microfone...');
-          
-          // ✅ USAR parada completa para silêncio
           this.stopListeningCompletely();
           return;
         }
@@ -1754,20 +1496,20 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     checkAudioLevel();
   }
 
-  // ADICIONAR método para parar detecção de silêncio:
+  /**
+   * Para detecção de silêncio
+   */
   private stopSilenceDetection(): void {
     console.log('🛑 Parando detecção de silêncio...');
     
     this.isDetectingSilence = false;
     this.clearSilenceTimer();
     
-    // ✅ GARANTIR que o estado visual seja atualizado
     if (this.isListening) {
       this.isListening = false;
       this.forceUIUpdate();
     }
     
-    // Limpar recursos de áudio
     if (this.microphone) {
       this.microphone.disconnect();
       this.microphone = null;
@@ -1781,21 +1523,23 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     this.analyser = null;
   }
 
-  // ADICIONAR método para resetar timer de silêncio:
+  /**
+   * Reseta timer de silêncio
+   */
   private resetSilenceTimer(): void {
     this.clearSilenceTimer();
     
     this.silenceTimer = setTimeout(() => {
       if (this.isListening) {
         console.log('⏰ Timer de silêncio expirou, fechando microfone...');
-        
-        // ✅ USAR parada completa para timeout
         this.stopListeningCompletely();
       }
     }, this.silenceThreshold);
   }
 
-  // ADICIONAR método para limpar timer de silêncio:
+  /**
+   * Limpa timer de silêncio
+   */
   private clearSilenceTimer(): void {
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
@@ -1803,18 +1547,18 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     }
   }
 
+  /**
+   * Para reconhecimento de voz completamente
+   */
   private async stopListeningCompletely(): Promise<void> {
     console.log('🛑 Parando reconhecimento COMPLETAMENTE...');
     
-    // ✅ 1. ATUALIZAR estado visual IMEDIATAMENTE
     this.isListening = false;
     this.voiceText = '';
     this.forceUIUpdate();
     
-    // ✅ 2. PARAR detecção de silêncio PRIMEIRO
     this.stopSilenceDetection();
     
-    // ✅ 3. PARAR speech service com retry se necessário
     let attempts = 0;
     const maxAttempts = 3;
     
@@ -1824,8 +1568,6 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
       
       try {
         await this.speechService.stopContinuousRecognition();
-        
-        // Aguardar confirmação de parada
         await new Promise(resolve => setTimeout(resolve, 200));
         
         if (!this.speechService.isRecognitionActive()) {
@@ -1837,7 +1579,6 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
       }
     }
     
-    // ✅ 4. VERIFICAÇÃO FINAL
     if (this.speechService.isRecognitionActive()) {
       console.error('❌ Não foi possível parar o speech service após todas as tentativas');
     }
@@ -1845,67 +1586,44 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     console.log('✅ Parada completa finalizada');
   }
 
-  private async stopListening() {
-    if (!this.isListening) return;
-    
-    console.log('🔇 Parando reconhecimento de voz...');
-    
-    // ✅ ATUALIZAR estado IMEDIATAMENTE
-    this.isListening = false;
-    this.voiceText = '';
-    this.forceUIUpdate();
-    
-    // Parar detecção de silêncio primeiro
-    this.stopSilenceDetection();
-    
-    try {
-      await this.speechService.stopContinuousRecognition();
-      console.log('✅ Reconhecimento parado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao parar reconhecimento:', error);
-    }
-    
-    // ✅ VERIFICAÇÃO FINAL
-    setTimeout(() => {
-      if (this.isListening) {
-        console.warn('⚠️ Estado inconsistente detectado, corrigindo...');
-        this.isListening = false;
-        this.forceUIUpdate();
-      }
-    }, 50);
-  }
-
+  /**
+   * Força reset do microfone
+   */
   public async forceResetMicrophone(): Promise<void> {
     console.log('💥 FORÇA BRUTA: Resetando microfone completamente...');
     
-    // 1. Parar detecção de silêncio
     this.stopSilenceDetection();
     
-    // 2. Atualizar estado visual
     this.isListening = false;
     this.voiceText = '';
     this.forceUIUpdate();
     
-    // 3. Force reset do speech service
     this.speechService.forceReset();
     
-    // 4. Aguardar um pouco
     await new Promise(resolve => setTimeout(resolve, 500));
     
     console.log('✅ Reset forçado do microfone concluído');
   }
 
-  // ADICIONAR método para configurar sensibilidade:
+  /**
+   * Configura sensibilidade de silêncio
+   */
   public setSilenceSensitivity(seconds: number): void {
     this.silenceThreshold = seconds * 1000;
     console.log(`🔧 Sensibilidade de silêncio ajustada para ${seconds} segundos`);
   }
 
+  /**
+   * Retorna status da conexão
+   */
   getConnectionStatus(): string {
     if (this.isLoading) return 'Conectando...';
     return this.isConnected ? 'Conectado' : 'Desconectado';
   }
 
+  /**
+   * Define mensagem de erro
+   */
   private setError(message: string) {
     this.errorMessage = message;
     this.error.emit(message);
@@ -1918,16 +1636,20 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     }, 10000);
   }
 
+  /**
+   * Limpa mensagem de erro
+   */
   clearError() {
     this.errorMessage = '';
   }
 
+  /**
+   * Limpa todos os recursos do componente
+   */
   private cleanup(): void {
     console.log('🧹 Limpando recursos do avatar...');
     
-    // ✅ PARAR TUDO completamente
     this.stopListeningCompletely();
-    
     this.stopSpeaking();
     
     if (this.avatarSynthesizer) {
@@ -1962,7 +1684,111 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
     console.log('✅ Limpeza concluída');
   }
 
-  // MÉTODO de debug específico para versão avançada:
+  /**
+   * Testa configuração de áudio (método de debug)
+   */
+  public testAudio(): void {
+    console.log('🧪 Testando configuração de áudio...');
+    
+    if (!this.avatarAudio) {
+      console.error('❌ Elemento de áudio não encontrado');
+      return;
+    }
+    
+    const audioElement = this.avatarAudio.nativeElement;
+    
+    console.log('🔊 Estado atual do áudio:', {
+      srcObject: !!audioElement.srcObject,
+      volume: audioElement.volume,
+      muted: audioElement.muted,
+      paused: audioElement.paused,
+      readyState: audioElement.readyState,
+      autoplay: audioElement.autoplay
+    });
+    
+    if (audioElement.srcObject) {
+      const stream = audioElement.srcObject as MediaStream;
+      console.log('🎵 Stream de áudio:', {
+        active: stream.active,
+        audioTracks: stream.getAudioTracks().length,
+        tracks: stream.getAudioTracks().map(track => ({
+          kind: track.kind,
+          enabled: track.enabled,
+          muted: track.muted,
+          readyState: track.readyState
+        }))
+      });
+    }
+  }
+
+  /**
+   * Força reprodução de áudio (método de debug)
+   */
+  public forceAudioPlayback(): void {
+    console.log('🔄 Forçando reprodução de áudio...');
+    
+    if (!this.avatarAudio?.nativeElement) {
+      console.error('❌ Elemento de áudio não disponível');
+      return;
+    }
+    
+    const audioElement = this.avatarAudio.nativeElement;
+    
+    audioElement.muted = false;
+    audioElement.volume = 1.0;
+    
+    audioElement.play()
+      .then(() => {
+        console.log('✅ Áudio forçado com sucesso!');
+      })
+      .catch(error => {
+        console.error('❌ Erro ao forçar áudio:', error);
+        this.createFallbackAudioElement();
+      });
+  }
+
+  /**
+   * Cria elemento de áudio fallback
+   */
+  private createFallbackAudioElement(): void {
+    console.log('🆘 Criando elemento de áudio fallback...');
+    
+    const fallbackAudio = document.createElement('audio');
+    fallbackAudio.autoplay = true;
+    fallbackAudio.volume = 1.0;
+    fallbackAudio.muted = false;
+    fallbackAudio.style.display = 'none';
+    document.body.appendChild(fallbackAudio);
+    
+    if (this.avatarAudio?.nativeElement.srcObject) {
+      fallbackAudio.srcObject = this.avatarAudio.nativeElement.srcObject;
+      
+      fallbackAudio.onplay = () => {
+        console.log('✅ Áudio fallback funcionando!');
+      };
+      
+      fallbackAudio.play()
+        .then(() => {
+          console.log('✅ Fallback audio iniciado!');
+        })
+        .catch(error => {
+          console.error('❌ Fallback também falhou:', error);
+        });
+    }
+  }
+
+  /**
+   * Obtém status da fala (método de debug)
+   */
+  public getSpeechStatus(): { isCurrentlySpeaking: boolean } {
+    return {
+      isCurrentlySpeaking: this.isCurrentlySpeaking
+    };
+  }
+
+  /**
+   * Debug do estado do microfone
+   */
   public debugMicrophoneState(): void {
     console.log('🐛 Debug Microphone State:', {
       isListening: this.isListening,
@@ -1975,7 +1801,7 @@ private startAvatarConnectionWithCallbacks(): Promise<boolean> {
       lastActivity: new Date(this.lastAudioActivity).toLocaleTimeString()
     });
     
-    // ✅ AÇÃO CORRETIVA se estado inconsistente
+    // Ação corretiva se estado inconsistente
     if (this.isListening && !this.speechService.isRecognitionActive()) {
       console.warn('⚠️ Estado inconsistente: UI mostra ouvindo mas service parado');
       this.isListening = false;

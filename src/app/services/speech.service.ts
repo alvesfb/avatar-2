@@ -4,12 +4,19 @@ import { environment } from '../../environments/environment';
 
 declare var SpeechSDK: any;
 
+/**
+ * Interface para resultado do reconhecimento de fala
+ */
 export interface SpeechRecognitionResult {
   text: string;
   confidence: number;
   isFinal: boolean;
 }
 
+/**
+ * Serviço responsável pelo reconhecimento de fala usando Azure Speech SDK
+ * Gerencia o microfone e converte fala em texto
+ */
 @Injectable({
   providedIn: 'root'
 })
@@ -29,6 +36,9 @@ export class SpeechService {
     this.initializeSpeechConfig();
   }
 
+  /**
+   * Inicializa configuração do Azure Speech Service
+   */
   private initializeSpeechConfig(): void {
     if (typeof SpeechSDK === 'undefined') {
       console.error('Azure Speech SDK não está carregado');
@@ -61,6 +71,11 @@ export class SpeechService {
     }
   }
 
+  /**
+   * Inicia reconhecimento contínuo de fala
+   * @param callbacks - Callbacks para eventos do reconhecimento
+   * @returns Promise<boolean> - true se iniciou com sucesso
+   */
   async startContinuousRecognition(callbacks: {
     onResult?: (result: SpeechRecognitionResult) => void;
     onError?: (error: string) => void;
@@ -121,13 +136,13 @@ export class SpeechService {
     }
   }
 
+  /**
+   * Para reconhecimento contínuo de fala
+   * @returns Promise<void>
+   */
   async stopContinuousRecognition(): Promise<void> {
     console.log('🔄 Iniciando parada do reconhecimento contínuo...');
-    console.log('📊 Estado atual:', {
-      isRecognizing: this.isRecognizing,
-      hasRecognizer: !!this.speechRecognizer
-    });
-
+    
     if (!this.isRecognizing || !this.speechRecognizer) {
       console.log('ℹ️ Reconhecimento já está parado ou recognizer não existe');
       this.isRecognizing = false;
@@ -137,13 +152,13 @@ export class SpeechService {
     return new Promise<void>((resolve) => {
       console.log('🛑 Enviando comando de parada para speechRecognizer...');
       
-      // ✅ TIMEOUT de segurança para evitar travamento
+      // Timeout de segurança para evitar travamento
       const stopTimeout = setTimeout(() => {
         console.warn('⏰ Timeout ao parar reconhecimento, forçando parada...');
         this.isRecognizing = false;
         this.cleanup();
         resolve();
-      }, 3000); // 3 segundos de timeout
+      }, 3000);
 
       this.speechRecognizer.stopContinuousRecognitionAsync(
         () => {
@@ -165,6 +180,9 @@ export class SpeechService {
     });
   }
 
+  /**
+   * Configura eventos do reconhecedor de fala
+   */
   private setupRecognitionEvents(): void {
     if (!this.speechRecognizer) return;
 
@@ -220,6 +238,10 @@ export class SpeechService {
     };
   }
 
+  /**
+   * Solicita permissão para usar o microfone
+   * @returns Promise<boolean> - true se permissão foi concedida
+   */
   private async requestMicrophonePermission(): Promise<boolean> {
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -239,12 +261,14 @@ export class SpeechService {
     }
   }
 
+  /**
+   * Limpa recursos do speech recognizer
+   */
   private cleanup(): void {
     console.log('🧹 Limpando speech recognizer...');
     
     if (this.speechRecognizer) {
       try {
-        // ✅ FORÇAR fechamento do recognizer
         this.speechRecognizer.close();
         console.log('✅ Speech recognizer fechado');
       } catch (error) {
@@ -259,14 +283,15 @@ export class SpeechService {
     console.log('✅ Cleanup do speech service concluído');
   }
 
-  // ADICIONAR método de força bruta para resetar o speech service:
+  /**
+   * Força reset completo do speech service
+   * Usado em casos de travamento ou estados inconsistentes
+   */
   public forceReset(): void {
     console.log('💥 FORÇANDO reset completo do speech service...');
     
-    // Parar tudo imediatamente
     this.isRecognizing = false;
     
-    // Fechar recognizer se existir
     if (this.speechRecognizer) {
       try {
         this.speechRecognizer.close();
@@ -276,20 +301,24 @@ export class SpeechService {
       this.speechRecognizer = null;
     }
     
-    // Limpar callbacks
     this.recognitionCallbacks = {};
-    
-    // Recriar configurações
     this.initializeSpeechConfig();
     
     console.log('✅ Reset forçado concluído');
   }
 
+  /**
+   * Verifica se o reconhecimento está ativo
+   * @returns boolean - true se está reconhecendo
+   */
   isRecognitionActive(): boolean {
     return this.isRecognizing;
   }
 
-  // Método para reconhecimento único (não contínuo)
+  /**
+   * Reconhecimento único (não contínuo) de fala
+   * @returns Promise<string> - texto reconhecido
+   */
   async recognizeOnce(): Promise<string> {
     if (!this.speechConfig || !this.audioConfig) {
       throw new Error('Speech Service não está configurado');
@@ -319,6 +348,9 @@ export class SpeechService {
     });
   }
 
+  /**
+   * Limpa recursos quando o serviço é destruído
+   */
   ngOnDestroy(): void {
     this.stopContinuousRecognition();
     this.cleanup();

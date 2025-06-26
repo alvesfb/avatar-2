@@ -2,12 +2,18 @@
 import { Injectable } from '@angular/core';
 import { environment } from '../../environments/environment';
 
+/**
+ * Interface para mensagens do chat
+ */
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp?: Date;
 }
 
+/**
+ * Interface para resposta do chatbot
+ */
 export interface ChatResponse {
   success: boolean;
   message?: string;
@@ -15,6 +21,10 @@ export interface ChatResponse {
   streaming?: boolean;
 }
 
+/**
+ * Serviço responsável pela comunicação com a API do chatbot
+ * Gerencia histórico de conversas e processamento de respostas
+ */
 @Injectable({
   providedIn: 'root'
 })
@@ -26,6 +36,9 @@ export class ChatbotService {
     this.initializeSystemMessage();
   }
 
+  /**
+   * Inicializa mensagem do sistema que define o comportamento do assistente
+   */
   private initializeSystemMessage(): void {
     const systemMessage: ChatMessage = {
       role: 'system',
@@ -35,10 +48,18 @@ export class ChatbotService {
     this.messages.push(systemMessage);
   }
 
+  /**
+   * Gera ID único para a conversa
+   */
   private generateConversationId(): string {
     return 'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
   }
 
+  /**
+   * Envia mensagem para o chatbot e retorna resposta
+   * @param userMessage - Mensagem do usuário
+   * @returns Promise com stream de resposta ou string completa
+   */
   async sendMessage(userMessage: string): Promise<ReadableStream<string> | string> {
     if (!userMessage.trim()) {
       throw new Error('Mensagem não pode estar vazia');
@@ -53,7 +74,7 @@ export class ChatbotService {
     this.messages.push(userChatMessage);
 
     try {
-      // Prepara o payload baseado no exemplo_chattxt.txt
+      // Prepara payload para a API
       const payload = {
         data: {
           input: userMessage,
@@ -74,7 +95,7 @@ export class ChatbotService {
         }
       };
 
-      // Faz a requisição
+      // Faz requisição para a API
       const response = await fetch(environment.chatbot.apiUrl, {
         method: 'POST',
         headers: environment.chatbot.headers,
@@ -86,6 +107,7 @@ export class ChatbotService {
         throw new Error(`Erro na API: ${response.status} ${response.statusText}`);
       }
 
+      // Verifica se deve usar streaming ou resposta completa
       if (environment.chatbot.streaming && response.body) {
         return this.handleStreamingResponse(response.body);
       } else {
@@ -115,10 +137,15 @@ export class ChatbotService {
     }
   }
 
+  /**
+   * Processa resposta em streaming da API
+   * @param body - Stream de dados da resposta
+   * @returns ReadableStream processado
+   */
   private handleStreamingResponse(body: ReadableStream<Uint8Array>): ReadableStream<string> {
     const reader = body.getReader();
     let assistantMessage = '';
-    const self = this; // Capturar referência do contexto
+    const self = this;
 
     return new ReadableStream<string>({
       async start(controller) {
@@ -127,7 +154,7 @@ export class ChatbotService {
             const { done, value } = await reader.read();
             
             if (done) {
-              // Adiciona mensagem completa ao histórico
+              // Adiciona mensagem completa ao histórico quando terminar
               if (assistantMessage.trim()) {
                 self.messages.push({
                   role: 'assistant',
@@ -139,7 +166,7 @@ export class ChatbotService {
               break;
             }
 
-            // Processa o chunk
+            // Processa chunk recebido
             const chunk = new TextDecoder().decode(value);
             const processedChunk = self.processStreamChunk(chunk);
             
@@ -156,15 +183,19 @@ export class ChatbotService {
     });
   }
 
+  /**
+   * Processa um chunk individual do stream
+   * @param chunk - Dados brutos do chunk
+   * @returns Texto processado ou string vazia
+   */
   private processStreamChunk(chunk: string): string {
     try {
-      // Baseado no processamento do exemplo_chattxt.txt
       const responseData = JSON.parse(chunk);
       
       if (responseData.data && responseData.data.output && responseData.data.output.text) {
         let text = responseData.data.output.text[0] || '';
         
-        // Limpa e processa o texto
+        // Limpa quebras de linha e aplica substituições
         text = text.replace(/\\n\\n?/g, ' ');
         text = this.applyTextReplacements(text);
         
@@ -177,8 +208,12 @@ export class ChatbotService {
     return '';
   }
 
+  /**
+   * Aplica substituições de texto específicas para correções de pronúncia
+   * @param text - Texto original
+   * @returns Texto com substituições aplicadas
+   */
   private applyTextReplacements(text: string): string {
-    // Baseado nas substituições do exemplo_chattxt.txt
     return text
       .replace(/primeclass/ig, 'praime class')
       .replace(/priority/ig, 'praióriti')
@@ -187,12 +222,18 @@ export class ChatbotService {
       .replace(/prime/ig, 'praime');
   }
 
+  /**
+   * Extrai mensagem da resposta da API
+   * @param data - Dados da resposta
+   * @returns Mensagem extraída ou mensagem de erro
+   */
   private extractMessageFromResponse(data: any): string {
-    // Extrai a mensagem da resposta baseado na estrutura da API
+    // Tenta extrair da estrutura padrão da API
     if (data.data && data.data.output && data.data.output.text) {
       return data.data.output.text[0] || environment.chatbot.fallbackMessages.error;
     }
     
+    // Fallback para estrutura alternativa
     if (data.message) {
       return data.message;
     }
@@ -200,8 +241,11 @@ export class ChatbotService {
     return environment.chatbot.fallbackMessages.error;
   }
 
+  /**
+   * Gera ou recupera ID único do usuário
+   * @returns ID do usuário
+   */
   private generateUserId(): string {
-    // Gera ou recupera ID do usuário
     let userId = localStorage.getItem('chatbot_user_id');
     if (!userId) {
       userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -210,16 +254,27 @@ export class ChatbotService {
     return userId;
   }
 
+  /**
+   * Retorna histórico completo da conversa
+   * @returns Array com todas as mensagens
+   */
   getConversationHistory(): ChatMessage[] {
     return [...this.messages];
   }
 
+  /**
+   * Limpa histórico da conversa e reinicia com nova ID
+   */
   clearConversation(): void {
     this.messages = [];
     this.conversationId = this.generateConversationId();
     this.initializeSystemMessage();
   }
 
+  /**
+   * Retorna ID da conversa atual
+   * @returns ID da conversa
+   */
   getConversationId(): string {
     return this.conversationId;
   }
