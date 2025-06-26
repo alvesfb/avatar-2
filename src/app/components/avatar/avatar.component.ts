@@ -639,72 +639,128 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
    * Inicializa a configuração do avatar
    */
   private async initializeAvatarConfig() {
-    try {
-      console.log('🔧 Inicializando configuração do avatar...');
-      
-      // Verificações das credenciais
-      if (!environment.azure.speechKey || environment.azure.speechKey === 'YOUR_AZURE_SPEECH_KEY') {
-        throw new Error('❌ ERRO: Azure Speech Key não configurada!');
-      }
+  try {
+    console.log('🔧 Inicializando configuração do avatar...');
+    
+    // ✅ Verificações das credenciais (manter igual)
+    if (!environment.azure.speechKey || environment.azure.speechKey === 'YOUR_AZURE_SPEECH_KEY') {
+      throw new Error('❌ ERRO: Azure Speech Key não configurada!');
+    }
 
-      if (!environment.azure.speechRegion) {
-        throw new Error('❌ ERRO: Azure Speech Region não configurada!');
-      }
+    if (!environment.azure.speechRegion) {
+      throw new Error('❌ ERRO: Azure Speech Region não configurada!');
+    }
 
-      const isValidKey = await this.validateAzureCredentials();
-      if (!isValidKey) {
-        throw new Error('❌ ERRO: Credenciais Azure inválidas!');
-      }
+    const isValidKey = await this.validateAzureCredentials();
+    if (!isValidKey) {
+      throw new Error('❌ ERRO: Credenciais Azure inválidas!');
+    }
 
-      console.log('🔑 Speech Key validada:', environment.azure.speechKey.substring(0, 8) + '...');
+    console.log('🔑 Speech Key validada:', environment.azure.speechKey.substring(0, 8) + '...');
+    
+    // ✅ Configuração do Speech Service (manter igual)
+    this.speechConfig = SpeechSDK.SpeechConfig.fromSubscription(
+      environment.azure.speechKey,
+      environment.azure.speechRegion
+    );
+    
+    // 🔧 ALTERAR: Configurar voz - personalizada ou padrão
+    if (environment.azure.avatar.custom.enabled && environment.azure.avatar.custom.voiceName) {
+      console.log('🎙️ Configurando voz personalizada:', environment.azure.avatar.custom.voiceName);
+      this.speechConfig.speechSynthesisVoiceName = environment.azure.avatar.custom.voiceName;
       
-      // Configuração do Speech Service
-      this.speechConfig = SpeechSDK.SpeechConfig.fromSubscription(
-        environment.azure.speechKey,
-        environment.azure.speechRegion
-      );
-      
+      // Configurar endpoint de voz personalizada se disponível
+      if (environment.azure.avatar.custom.voiceEndpointId) {
+        this.speechConfig.endpointId = environment.azure.avatar.custom.voiceEndpointId;
+        console.log('🔗 Endpoint de voz personalizada configurado:', environment.azure.avatar.custom.voiceEndpointId);
+      }
+    } else {
       this.speechConfig.speechSynthesisVoiceName = environment.azure.avatar.voiceName;
-      
-      // Configuração do formato de vídeo com crop otimizado
-      console.log('🎥 Configurando video format e crop...');
-      const videoFormat = new SpeechSDK.AvatarVideoFormat();
-      
-      // Valores para centralizar o avatar com fundo branco
-      let videoCropTopLeftX = 400;
-      let videoCropTopLeftY = 0;
-      let videoCropBottomRightX = 1520;
-      let videoCropBottomRightY = 1080;
-      
-      videoFormat.setCropRange(
-        new SpeechSDK.Coordinate(videoCropTopLeftX, videoCropTopLeftY), 
-        new SpeechSDK.Coordinate(videoCropBottomRightX, videoCropBottomRightY)
-      );
+      console.log('🎙️ Usando voz padrão:', environment.azure.avatar.voiceName);
+    }
+    
+    // ✅ Configuração do formato de vídeo (manter similar, mas melhorar)
+    console.log('🎥 Configurando video format e crop...');
+    const videoFormat = new SpeechSDK.AvatarVideoFormat();
+    
+    // 🔧 ALTERAR: Usar configurações de crop personalizadas ou padrão
+    let videoCropTopLeftX, videoCropTopLeftY, videoCropBottomRightX, videoCropBottomRightY;
+    
+    if (environment.azure.avatar.custom.enabled && environment.azure.avatar.custom.cropSettings) {
+      const crop = environment.azure.avatar.custom.cropSettings;
+      videoCropTopLeftX = crop.topLeftX;
+      videoCropTopLeftY = crop.topLeftY;
+      videoCropBottomRightX = crop.bottomRightX;
+      videoCropBottomRightY = crop.bottomRightY;
+      console.log('🎯 Usando configurações de crop personalizadas');
+    } else {
+      // Valores padrão atuais
+      videoCropTopLeftX = 400;
+      videoCropTopLeftY = 0;
+      videoCropBottomRightX = 1520;
+      videoCropBottomRightY = 1080;
+      console.log('📐 Usando configurações de crop padrão');
+    }
+    
+    videoFormat.setCropRange(
+      new SpeechSDK.Coordinate(videoCropTopLeftX, videoCropTopLeftY), 
+      new SpeechSDK.Coordinate(videoCropBottomRightX, videoCropBottomRightY)
+    );
 
-      // Configuração do avatar
+    console.log('📐 Crop configurado:', {
+      topLeft: { x: videoCropTopLeftX, y: videoCropTopLeftY },
+      bottomRight: { x: videoCropBottomRightX, y: videoCropBottomRightY }
+    });
+
+    // 🔧 ALTERAR: Configuração do avatar - personalizado ou padrão
+    if (environment.azure.avatar.custom.enabled) {
+      console.log('👤 Configurando avatar personalizado...');
+      
+      // ✅ CORRIGIR: Usar avatarId personalizado em vez de character/style padrão
+      this.avatarConfig = new SpeechSDK.AvatarConfig(
+        environment.azure.avatar.custom.avatarId,  // 🔧 USAR avatarId personalizado
+        environment.azure.avatar.custom.style || '', // 🔧 USAR style personalizado
+        videoFormat
+      );
+      
+      this.avatarConfig.customized = true; // ✅ Manter
+      console.log('✅ Avatar personalizado habilitado:', environment.azure.avatar.custom.avatarId);
+    } else {
+      console.log('🎭 Configurando avatar padrão...');
+      
+      // ✅ Manter configuração padrão atual
       this.avatarConfig = new SpeechSDK.AvatarConfig(
         environment.azure.avatar.character,
         environment.azure.avatar.style,
         videoFormat
       );
       
-      // Configurar fundo branco
-      this.avatarConfig.backgroundColor = '#FFFFFFFF';
-      
-      // Avatar customizado se habilitado
-      if (environment.azure.avatar.custom.enabled) {
-        this.avatarConfig.customized = true;
-        console.log('👤 Avatar customizado habilitado');
-      }
-
-      console.log('✅ Configuração do avatar inicializada');
-      
-    } catch (error) {
-      console.error('❌ Erro ao inicializar configuração do avatar:', error);
-      this.setError(`Erro na configuração: ${error}`);
-      throw error;
+      this.avatarConfig.customized = false;
+      console.log('✅ Avatar padrão configurado:', environment.azure.avatar.character);
     }
-  } 
+    
+    // 🔧 ALTERAR: Configurar cor de fundo (melhorar lógica)
+    const backgroundColor = environment.azure.avatar.custom.enabled && environment.azure.avatar.custom.background.color
+      ? environment.azure.avatar.custom.background.color
+      : '#FFFFFFFF';
+    
+    this.avatarConfig.backgroundColor = backgroundColor;
+    console.log('🎨 Cor de fundo configurada:', backgroundColor);
+    
+    // 🆕 ADICIONAR: Configurar imagem de fundo se especificada
+    if (environment.azure.avatar.custom.enabled && environment.azure.avatar.custom.background.image) {
+      this.avatarConfig.backgroundImage = environment.azure.avatar.custom.background.image;
+      console.log('🖼️ Imagem de fundo configurada:', environment.azure.avatar.custom.background.image);
+    }
+
+    console.log('✅ Configuração do avatar inicializada com sucesso');
+    
+  } catch (error) {
+    console.error('❌ Erro ao inicializar configuração do avatar:', error);
+    this.setError(`Erro na configuração: ${error}`);
+    throw error;
+  }
+}
 
   /**
    * Valida as credenciais do Azure
@@ -1302,25 +1358,51 @@ export class AvatarComponent implements OnInit, OnDestroy, AfterViewInit {
    * Cria SSML otimizado para o avatar
    */
   private createOptimizedSSML(text: string): string {
-    const voiceName = environment.azure.avatar.voiceName;
-    
-    // Escapar caracteres especiais
-    const escapedText = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-
-    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="pt-BR">
-      <voice name="${voiceName}">
-        <mstts:leadingsilence-exact value="0"/>
-        <prosody rate="0.9" pitch="+2%">
-          ${escapedText}
-        </prosody>
-      </voice>
-    </speak>`;
+  let voiceName: string;
+  
+  // 🔧 MELHORAR: Determinar qual voz usar (personalizada ou padrão)
+  if (environment.azure.avatar.custom.enabled && environment.azure.avatar.custom.voiceName) {
+    voiceName = environment.azure.avatar.custom.voiceName;
+    console.log('🎙️ Usando voz personalizada para SSML:', voiceName);
+  } else {
+    voiceName = environment.azure.avatar.voiceName;
+    console.log('🎙️ Usando voz padrão para SSML:', voiceName);
   }
+  
+  // ✅ Manter escapar caracteres especiais
+  const escapedText = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  // 🔧 MELHORAR: SSML otimizado com configurações específicas por tipo de voz
+  let ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" xml:lang="pt-BR">
+    <voice name="${voiceName}">
+      <mstts:leadingsilence-exact value="0"/>`;
+  
+  // 🆕 ADICIONAR: Configurações específicas para vozes personalizadas vs padrão
+  if (environment.azure.avatar.custom.enabled && environment.azure.avatar.custom.voiceName) {
+    // Para vozes personalizadas, usar configurações mais neutras
+    ssml += `
+      <prosody rate="1.0" pitch="0%" volume="100%">
+        ${escapedText}
+      </prosody>`;
+  } else {
+    // Para vozes padrão, usar configurações otimizadas atuais
+    ssml += `
+      <prosody rate="0.9" pitch="+2%">
+        ${escapedText}
+      </prosody>`;
+  }
+  
+  ssml += `
+    </voice>
+  </speak>`;
+
+  return ssml;
+}
 
   /**
    * Para toda a fala do avatar

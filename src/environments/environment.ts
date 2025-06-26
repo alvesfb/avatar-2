@@ -20,9 +20,18 @@ export const environment = {
         enabled: true, // Habilitar para usar avatar personalizado
         avatarId: 'vivian', // ID do avatar personalizado criado no Azure
         style: '', // Estilo do avatar personalizado
+        voiceName: 'VivianNeural',
+        voiceEndpointId: 'a309caf0-97b4-4e8f-b8c6-89ce450294a1',
         background: {
           color: '#FFFFFFFF', // Cor de fundo (formato ARGB)
           image: null // URL da imagem de fundo (opcional)
+        },
+        // 🆕 ADICIONAR: Configurações de crop/enquadramento
+        cropSettings: {
+          topLeftX: 600,
+          topLeftY: 50,
+          bottomRightX: 1320,
+          bottomRightY: 1080
         }
       }
     },
